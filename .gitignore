@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tool caches
+.venv/
+.pytest_cache/
+.ruff_cache/
+.ty_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Generated layout artifacts (rebuilt by `python -m sonyx.artifacts`)
+layout_artifacts/
+
+# Layout binaries — never committed. Defense in depth on top of layout_artifacts/.
+# (Force-add specific reference/overlay GDS with `git add -f` if you keep a
+# tracked review dir.)
+*.gds
+*.oas

@@ -1,0 +1,11 @@
+line-length = 100
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint]
+select = ["E", "W", "F", "I", "B", "D", "UP", "ANN", "RUF", "PLC", "PLE"]
+ignore = ["COM812"]
+
+[lint.extend-per-file-ignores]
+"tests/**/*.py" = ["D", "S101", "ANN", "INP001", "PLR2004"]
