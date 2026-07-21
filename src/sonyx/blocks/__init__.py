@@ -13,3 +13,10 @@ Two authoring modes, picked by how often the thing is instantiated:
 Unlike the one-off top assembly in ``design.py``, everything here is meant to
 be imported and composed by ``build()`` (or by other blocks).
 """
+
+from __future__ import annotations
+
+from . import dies
+from .reticle import reticle
+
+__all__ = ["dies", "reticle"]

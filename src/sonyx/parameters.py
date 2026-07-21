@@ -23,16 +23,71 @@ from __future__ import annotations
 
 from picasso.building_blocks import ParameterField, ParametersBase
 
+# --- Reticle die array (dimensionless counts) -------------------------------
+# Kept as plain ints (not ParameterFields) so they index ``range()`` directly.
+# 2 columns x 4 rows = 8 dies (tapeout plan v1 §2).
+DIE_COLUMNS = 2
+DIE_ROWS = 4
+
 
 class Parameters(ParametersBase):
-    """Flat namespace of sonyx's layout-side parameters."""
+    """Flat namespace of sonyx's layout-side parameters.
 
-    # Declare entries here. The unit belongs in ``units=``, not the
-    # name itself (so ``block_height``, not ``block_height_um``).
-    #   block_height = ParameterField(
-    #       2000.0, units="um",
-    #       description="Vertical extent of the main block.",
-    #   )
+    Reticle / die / dicing geometry for the full-reticle 2x4 shuttle
+    (``docs/tapeout_plan_reticle_v1.md`` §2, in the luqia_ln200 PDK repo).
+    Dies + dicing lanes tile the reticle exactly; :func:`_check_tiling`
+    enforces that at import so an inconsistent edit fails fast.
+    """
+
+    reticle_size = ParameterField(
+        22000.0,
+        units="um",
+        description="Full reticle edge — square, 22 mm (the complete top cell).",
+    )
+    dicing_lane = ParameterField(
+        150.0,
+        units="um",
+        description=(
+            "Width of the deep-etch dicing street between adjacent dies and "
+            "around the reticle perimeter. Equals luqia's deep_trench_width — "
+            "the DEEP_ETCH trench fills the full lane (checked in blocks/reticle.py)."
+        ),
+    )
+    die_width = ParameterField(
+        10775.0,
+        units="um",
+        description=(
+            "Per-die width = (reticle_size - (DIE_COLUMNS+1)·dicing_lane) / DIE_COLUMNS "
+            "= (22000 - 3·150) / 2. Pinned; validated by _check_tiling()."
+        ),
+    )
+    die_height = ParameterField(
+        5312.5,
+        units="um",
+        description=(
+            "Per-die height = (reticle_size - (DIE_ROWS+1)·dicing_lane) / DIE_ROWS "
+            "= (22000 - 5·150) / 4. Pinned; validated by _check_tiling()."
+        ),
+    )
 
 
 parameters = Parameters()
+
+
+def _check_tiling() -> None:
+    """Fail fast (at import) if dies + dicing lanes don't exactly fill the reticle."""
+    p = parameters
+    tol = 1e-6
+    width = DIE_COLUMNS * p.die_width.value + (DIE_COLUMNS + 1) * p.dicing_lane.value
+    height = DIE_ROWS * p.die_height.value + (DIE_ROWS + 1) * p.dicing_lane.value
+    if abs(width - p.reticle_size.value) > tol:
+        raise ValueError(
+            f"columns do not fill reticle width: {width} != {p.reticle_size.value} µm"
+        )
+    if abs(height - p.reticle_size.value) > tol:
+        raise ValueError(
+            f"rows do not fill reticle height: {height} != {p.reticle_size.value} µm"
+        )
+
+
+_check_tiling()
