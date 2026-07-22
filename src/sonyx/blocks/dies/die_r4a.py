@@ -9,9 +9,13 @@ from __future__ import annotations
 import picasso as fw
 
 from ...parameters import DieParameters
-from ._frame import die_frame
+from ._frame import die_scaffold
 
 
 def die_r4a() -> fw.Component:
-    """Return the R4·A die holder."""
-    return die_frame("die_R4A", DieParameters())
+    """Build and return the R4·A die."""
+    cell = die_scaffold("die_R4A", DieParameters())
+    # --- R4·A per-die content (see module docstring for planned DUTs) ---
+    # Add geometry / routing here; shared placements are reachable on
+    # cell.instances[...] (e.g. "edge_couplers_circuit", "bondpads").
+    return cell

@@ -1,9 +1,10 @@
 """Die holders for the sonyx 2x4 reticle (``tapeout_plan_reticle_v1.md`` §2/§4.0).
 
-Eight same-shape dies, one module each — row **R1 (top) → R4 (bottom)**,
-column **A (left) / B (right)**. Each is frame-only for now (see
-:func:`._frame.die_frame`); the per-module docstrings record the planned test
-content that fills each die later.
+Eight dies, one module each — row **R1 (top) → R4 (bottom)**, column
+**A (left) / B (right)**. Each module is the full builder for its die: it
+calls the shared :func:`._frame.die_scaffold` for the common placements, then
+adds that die's own geometry / routing on the returned cell. The per-module
+docstrings record the planned test content that fills each die later.
 
 :data:`DIE_GRID` is the row-major placement map consumed by
 :func:`sonyx.blocks.reticle.reticle`: ``DIE_GRID[row][col]`` with ``row=0`` at

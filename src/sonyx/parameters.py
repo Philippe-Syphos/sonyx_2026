@@ -180,7 +180,7 @@ class DieParameters(ParametersBase):
 
     Distinct from the layout-wide :data:`parameters`: these are knobs a single
     die owns. Each die module (``blocks/dies/die_r*.py``) instantiates its own
-    :class:`DieParameters` and passes it to ``die_frame``.
+    :class:`DieParameters` and passes it to ``die_scaffold``.
     """
 
     num_edge_couplers_circuit = ParameterField(

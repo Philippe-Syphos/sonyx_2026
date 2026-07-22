@@ -1,16 +1,19 @@
-"""Shared die-holder frame for the sonyx 2x4 reticle.
+"""Shared die scaffold for the sonyx 2x4 reticle.
+
+:func:`die_scaffold` builds the placements **common to every die** — the die
+boundary (``DIE``), a perimeter keep-out ring (``KEEPOUT``), the die-ID label
+(``WG_RIB.drawing``), the circuit-side edge-coupler array (lower-left), and a
+TOP_METAL bond-pad array (lower-right) — and returns the **live, mutable**
+``Component``. Each per-die module (``die_r1a`` … ``die_r4b``) is the real
+builder for its die: it calls :func:`die_scaffold`, then adds that die's own
+geometry / routing on the returned cell (reaching the shared elements' ports
+via ``cell.instances[...]``), and returns it. So the shared frame stays a
+single source of truth while every die is wired independently.
 
 Every die is the **same shape**: a ``die_width x die_height`` rectangle
-(10.775 x 5.3125 mm) that sits just inside the deep-etch dicing trench which
-surrounds it (the trench is owned by the reticle assembler,
-``blocks.reticle``, not by the die). The frame carries the die boundary
-(``DIE``), a perimeter keep-out ring (``KEEPOUT``), the die-ID label
-(``WG_RIB.drawing``), and the circuit-side edge-coupler array in the
-lower-left corner. Further DUTs land in each die later via the per-die
-modules (``die_r1a`` … ``die_r4b``).
-
-The frame is centred on the origin so the reticle assembler places it by its
-centre.
+(10.775 x 5.3125 mm) that sits just inside the deep-etch dicing trench (owned
+by the reticle assembler, ``blocks.reticle``, not the die). The scaffold is
+centred on the origin so the reticle assembler places it by its centre.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from picasso.leaves import make_label
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..bondpads import bondpad_array
 from ..edge_couplers import circuit_edge_coupler_array
 
 # String layers → resolved against the active PDK at materialize time.
@@ -37,26 +41,34 @@ _LABEL_HEIGHT = 75.0
 _LABEL_MARGIN = 0.0
 
 
-def die_frame(name: str, die_params: DieParameters) -> fw.Component:
-    """Return a die holder named ``name``, centred at the origin.
+def die_scaffold(name: str, die_params: DieParameters) -> fw.Component:
+    """Build the shared die scaffold and return the **live, mutable** cell.
 
-    The die boundary is a single ``die_width x die_height`` rectangle drawn
-    directly on the ``DIE`` layer (its edges abut the surrounding trench's
-    inner wall). A ``keepout_width`` perimeter keep-out band (die-edge
-    exclusion ring) is drawn just inside that edge on ``KEEPOUT.drawing``. A
-    die-ID label (= ``name``) is rendered as visible filled polygons via
-    :func:`picasso.leaves.make_label` on the ``WG_RIB.drawing`` layer and
-    left-aligned in the die's top-left corner. The circuit-side edge-coupler
-    array (``die_params.num_edge_couplers_circuit`` couplers) sits in the
-    lower-left corner, facets protruding south past the die edge. Further
-    content is added by callers.
+    The caller (a per-die builder) keeps building on the returned cell, adding
+    that die's own geometry / routing and reaching the shared placements'
+    ports through ``cell.instances[...]`` (named below).
+
+    Places, on a ``die_width x die_height`` cell centred at the origin:
+
+    - the die-defining rectangle on ``DIE`` (edges abut the surrounding
+      trench's inner wall);
+    - a ``keepout_width`` perimeter keep-out ring on ``KEEPOUT.drawing``;
+    - a die-ID label (= ``name``) as filled glyph polygons on
+      ``WG_RIB.drawing`` in the top-left corner (instance ``"die_id"``);
+    - the circuit-side edge-coupler array (``die_params.num_edge_couplers_circuit``
+      couplers) lower-left, facets south past the die edge (instance
+      ``"edge_couplers_circuit"``, ports ``o2_r0_cN``), with the leftmost pair
+      looped back (instance ``"ec_loopback_circuit"``);
+    - a TOP_METAL bond-pad array (``die_params.num_bondpads`` pads) lower-right
+      (instance ``"bondpads"``).
 
     Args:
         name: Cell name (also the die-ID shown in the corner label).
         die_params: This die's :class:`~sonyx.parameters.DieParameters`.
 
     Returns:
-        The die-holder :class:`~picasso.component.Component`.
+        The live die :class:`~picasso.component.Component` for the caller to
+        extend and return.
     """
     half_w = _p.die_width.value / 2.0
     half_h = _p.die_height.value / 2.0
@@ -116,6 +128,23 @@ def die_frame(name: str, die_params: DieParameters) -> fw.Component:
                 name="ec_loopback_circuit",
             )
             cell.connect(loop.ports.o1, ec_inst.ports.o2_r0_c1)
+
+    # Bond-pad array (TOP_METAL) in the lower-right corner: horizontal row tiled
+    # with make_array. Rightmost pad clears the right keep-out band plus
+    # bondpad_horizontal_shift; the row bottom clears the bottom keep-out plus
+    # bondpad_vertical_shift (so wirebonded pads stay off the die edge).
+    num_bp = int(die_params.num_bondpads.value)
+    if num_bp > 0:
+        bp = bondpad_array(num_bp)
+        bp_bb = bp.bbox
+        right_x = half_w - _p.keepout_width.value - _p.bondpad_horizontal_shift.value
+        bottom_y = -half_h + _p.keepout_width.value + _p.bondpad_vertical_shift.value
+        cell.add_placed(
+            bp,
+            "bondpads",
+            x=right_x - bp_bb.xmax,
+            y=bottom_y - bp_bb.ymin,
+        )
 
     cell.cell_type = "die_assembly"
     return cell
