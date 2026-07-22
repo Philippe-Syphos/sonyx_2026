@@ -136,6 +136,40 @@ class Parameters(ParametersBase):
             "left edge, on top of the keepout clearance. PLACEHOLDER."
         ),
     )
+    bondpad_horizontal_shift = ParameterField(
+        300.0,
+        units="um",
+        description=(
+            "Extra horizontal offset of the bond-pad array away from the die's "
+            "right edge, on top of the keepout clearance. PLACEHOLDER."
+        ),
+    )
+    bondpad_vertical_shift = ParameterField(
+        50.0,
+        units="um",
+        description=(
+            "Extra vertical offset of the bond-pad array up from the die's bottom "
+            "edge, on top of the keepout clearance — keeps wirebonded pads clear "
+            "of the die edge. PLACEHOLDER."
+        ),
+    )
+    gsg_modulator_spacing = ParameterField(
+        300.0,
+        units="um",
+        description=(
+            "Vertical centre-to-centre spacing between stacked GSG modulators on a "
+            "die. Reserved — consumed once a die hosts more than one modulator. "
+            "PLACEHOLDER."
+        ),
+    )
+    gsg_modulator_vertical_shift = ParameterField(
+        0.0,
+        units="um",
+        description=(
+            "Vertical offset of the GSG modulator centre from the die centre. "
+            "PLACEHOLDER."
+        ),
+    )
 
 
 parameters = Parameters()
@@ -157,6 +191,41 @@ class DieParameters(ParametersBase):
             "array (lower-left corner, pitch = edge_coupling_pitch_for_circuits). "
             "PLACEHOLDER default; override per die."
         ),
+    )
+    num_bondpads = ParameterField(
+        9,
+        units="",
+        description=(
+            "Number of TOP_METAL bond pads in this die's bond-pad array "
+            "(lower-right corner, pitch = luqia bondpad_pitch). "
+            "PLACEHOLDER default; override per die."
+        ),
+    )
+    gsg_modulator_cell = ParameterField(
+        "straight_gsg_modulator_800nm",
+        units="",
+        description=(
+            "Registered luqia cell name of this die's GSG phase-modulator "
+            "electrode (phase only, no couplers), resolved via pdk.cells. Base "
+            "default is the SM straight_gsg_modulator_800nm; the multimode variant "
+            "is straight_gsg_modulator_mm_800nm. Change per die/config as needed."
+        ),
+    )
+
+
+class DieParametersMultimode(DieParameters):
+    """Column-B die config — multimode GSG modulator electrode.
+
+    Per-die values differ from the base only by redeclaring the field
+    (``ParameterField`` is read-only and class-shared, so a subclass is the way
+    to vary a value). Add further variant subclasses as the configuration
+    evolves.
+    """
+
+    gsg_modulator_cell = ParameterField(
+        "straight_gsg_modulator_mm_800nm",
+        units="",
+        description="Multimode GSG phase-modulator electrode (column B).",
     )
 
 
