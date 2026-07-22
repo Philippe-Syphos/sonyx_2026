@@ -69,6 +69,46 @@ class Parameters(ParametersBase):
             "= (22000 - 5·150) / 4. Pinned; validated by _check_tiling()."
         ),
     )
+    keepout_width = ParameterField(
+        50.0,
+        units="um",
+        description=(
+            "Width of the keepout zone around the die perimeter. "
+            "Keep this zone clear of any mask."
+        ),
+    )
+    edge_coupling_pitch_for_circuits = ParameterField(
+        127.0,
+        units="um",
+        description=(
+            "Pitch of the edge-coupling test structures (for circuits) "
+            "on the die perimeter. Keep this zone clear of any mask."
+        ),
+    )
+    edge_coupling_pitch_for_tests = ParameterField(
+        127.0,
+        units="um",
+        description=(
+            "Pitch of the edge-coupling test structures (for tests) "
+            "on the die perimeter. Keep this zone clear of any mask."
+        ),
+    )
+    grating_coupling_pitch_for_circuits = ParameterField(
+        254.0,
+        units="um",
+        description=(
+            "Pitch of the grating-coupling test structures (for circuits) "
+            "on the die perimeter. Keep this zone clear of any mask."
+        ),
+    )
+    grating_coupling_pitch_for_tests = ParameterField(
+        254.0,
+        units="um",
+        description=(
+            "Pitch of the grating-coupling test structures (for tests) "
+            "on the die perimeter. Keep this zone clear of any mask."
+        ),
+    )
 
 
 parameters = Parameters()

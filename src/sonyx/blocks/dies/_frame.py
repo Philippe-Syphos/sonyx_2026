@@ -21,9 +21,11 @@ from picasso.leaves import make_label
 from ...parameters import parameters as _p
 
 # String layers → resolved against the active PDK at materialize time.
-#   DIE.boundary  = the die-defining rectangle (GDS 0/0, reference, not printed).
+#   DIE.boundary   = the die-defining rectangle (GDS 0/0, reference, not printed).
+#   KEEPOUT.drawing = die-edge exclusion ring, "no geometry here" (900/0, design-side).
 #   WG_RIB.drawing = the rib-waveguide drawing layer the die-ID glyphs print on.
 _DIE_LAYER = "DIE.boundary"
+_KEEPOUT_LAYER = "KEEPOUT.drawing"
 _LABEL_LAYER = "WG_RIB.drawing"
 
 # Die-ID label: ~200 um tall glyphs, inset 150 um from the top-left die corner.
@@ -36,10 +38,11 @@ def die_frame(name: str) -> fw.Component:
 
     The die boundary is a single ``die_width x die_height`` rectangle drawn
     directly on the ``DIE`` layer (its edges abut the surrounding trench's
-    inner wall). A die-ID label (= ``name``) is rendered as visible filled
-    polygons via :func:`picasso.leaves.make_label` on the ``WG_RIB.drawing``
-    layer and left-aligned in the die's top-left corner. Content is added by
-    callers.
+    inner wall). A ``keepout_width`` perimeter keep-out band (die-edge
+    exclusion ring) is drawn just inside that edge on ``KEEPOUT.drawing``. A
+    die-ID label (= ``name``) is rendered as visible filled polygons via
+    :func:`picasso.leaves.make_label` on the ``WG_RIB.drawing`` layer and
+    left-aligned in the die's top-left corner. Content is added by callers.
 
     Args:
         name: Cell name (also the die-ID shown in the corner label).
@@ -52,6 +55,20 @@ def die_frame(name: str) -> fw.Component:
     cell = fw.Component(name=name)
 
     rectangle(cell, width=_p.die_width.value, height=_p.die_height.value, layer=_DIE_LAYER)
+
+    # Perimeter keep-out band (die-edge exclusion ring), width keepout_width,
+    # outer edge on the die edge. Four non-overlapping rectangle tiles (top /
+    # bottom full-width, left / right filling the gap between) — an exact ring
+    # with no corner gaps.
+    kw = _p.keepout_width.value
+    w, h = _p.die_width.value, _p.die_height.value
+    band_h = h - 2.0 * kw
+    top_y = half_h - kw / 2.0
+    side_x = half_w - kw / 2.0
+    rectangle(cell, width=w, height=kw, layer=_KEEPOUT_LAYER, center=(0.0, top_y))
+    rectangle(cell, width=w, height=kw, layer=_KEEPOUT_LAYER, center=(0.0, -top_y))
+    rectangle(cell, width=kw, height=band_h, layer=_KEEPOUT_LAYER, center=(-side_x, 0.0))
+    rectangle(cell, width=kw, height=band_h, layer=_KEEPOUT_LAYER, center=(side_x, 0.0))
 
     # Die-ID label as visible glyph polygons. make_label centres the text on
     # x=0 with its top edge (valign="top") at y=0, so offset by half its width
