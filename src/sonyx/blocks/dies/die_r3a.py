@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import picasso as fw
 
+from ...parameters import DieParameters
 from ._frame import die_frame
 
 
 def die_r3a() -> fw.Component:
     """Return the R3·A die holder."""
-    return die_frame("die_R3A")
+    return die_frame("die_R3A", DieParameters())

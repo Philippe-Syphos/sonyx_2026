@@ -109,9 +109,55 @@ class Parameters(ParametersBase):
             "on the die perimeter. Keep this zone clear of any mask."
         ),
     )
+    edge_coupler_extension_length = ParameterField(
+        10.0,
+        units="um",
+        description=(
+            "Length of the straight facet-side (o1) lead appended to each edge "
+            "coupler, running toward the die edge on the ec_tip_800nm facet "
+            "cross-section. PLACEHOLDER."
+        ),
+    )
+    edge_coupler_protrusion = ParameterField(
+        5.0,
+        units="um",
+        description=(
+            "Extent of the edge-coupler facet lead (extension) that overlaps into "
+            "the deep-trench zone — i.e. how far the facet tip sits past the die "
+            "edge, so the facet is exposed after singulation. Must be <= "
+            "edge_coupler_extension_length. PLACEHOLDER."
+        ),
+    )
+    edge_coupler_horizontal_shift = ParameterField(
+        100.0,
+        units="um",
+        description=(
+            "Extra horizontal offset of the edge-coupler array away from the die's "
+            "left edge, on top of the keepout clearance. PLACEHOLDER."
+        ),
+    )
 
 
 parameters = Parameters()
+
+
+class DieParameters(ParametersBase):
+    """Per-die parameter set — one instance per die (values may differ per die).
+
+    Distinct from the layout-wide :data:`parameters`: these are knobs a single
+    die owns. Each die module (``blocks/dies/die_r*.py``) instantiates its own
+    :class:`DieParameters` and passes it to ``die_frame``.
+    """
+
+    num_edge_couplers_circuit = ParameterField(
+        8,
+        units="",
+        description=(
+            "Number of edge couplers in this die's circuit-side edge-coupler "
+            "array (lower-left corner, pitch = edge_coupling_pitch_for_circuits). "
+            "PLACEHOLDER default; override per die."
+        ),
+    )
 
 
 def _check_tiling() -> None:

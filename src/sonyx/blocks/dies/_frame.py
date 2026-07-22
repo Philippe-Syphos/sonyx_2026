@@ -3,9 +3,10 @@
 Every die is the **same shape**: a ``die_width x die_height`` rectangle
 (10.775 x 5.3125 mm) that sits just inside the deep-etch dicing trench which
 surrounds it (the trench is owned by the reticle assembler,
-``blocks.reticle``, not by the die). The die-defining rectangle is the ONLY
-geometry here — on the ``DIE`` layer (luqia's "Die outline", GDS 0/0,
-reference-only). Real DUTs / labels land in each die later via the per-die
+``blocks.reticle``, not by the die). The frame carries the die boundary
+(``DIE``), a perimeter keep-out ring (``KEEPOUT``), the die-ID label
+(``WG_RIB.drawing``), and the circuit-side edge-coupler array in the
+lower-left corner. Further DUTs land in each die later via the per-die
 modules (``die_r1a`` … ``die_r4b``).
 
 The frame is centred on the origin so the reticle assembler places it by its
@@ -18,7 +19,9 @@ import picasso as fw
 from picasso.geometry.ops import rectangle
 from picasso.leaves import make_label
 
+from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..edge_couplers import circuit_edge_coupler_array
 
 # String layers → resolved against the active PDK at materialize time.
 #   DIE.boundary   = the die-defining rectangle (GDS 0/0, reference, not printed).
@@ -33,8 +36,8 @@ _LABEL_HEIGHT = 200.0
 _LABEL_MARGIN = 150.0
 
 
-def die_frame(name: str) -> fw.Component:
-    """Return an empty die holder named ``name``, centred at the origin.
+def die_frame(name: str, die_params: DieParameters) -> fw.Component:
+    """Return a die holder named ``name``, centred at the origin.
 
     The die boundary is a single ``die_width x die_height`` rectangle drawn
     directly on the ``DIE`` layer (its edges abut the surrounding trench's
@@ -42,10 +45,14 @@ def die_frame(name: str) -> fw.Component:
     exclusion ring) is drawn just inside that edge on ``KEEPOUT.drawing``. A
     die-ID label (= ``name``) is rendered as visible filled polygons via
     :func:`picasso.leaves.make_label` on the ``WG_RIB.drawing`` layer and
-    left-aligned in the die's top-left corner. Content is added by callers.
+    left-aligned in the die's top-left corner. The circuit-side edge-coupler
+    array (``die_params.num_edge_couplers_circuit`` couplers) sits in the
+    lower-left corner, facets protruding south past the die edge. Further
+    content is added by callers.
 
     Args:
         name: Cell name (also the die-ID shown in the corner label).
+        die_params: This die's :class:`~sonyx.parameters.DieParameters`.
 
     Returns:
         The die-holder :class:`~picasso.component.Component`.
@@ -81,6 +88,23 @@ def die_frame(name: str) -> fw.Component:
         x=-half_w + _LABEL_MARGIN + label_width / 2.0,
         y=half_h - _LABEL_MARGIN,
     )
+
+    # Circuit-side edge-coupler array in the lower-left corner: horizontal row,
+    # facets south. Leftmost coupler clears the left keep-out band plus an extra
+    # edge_coupler_horizontal_shift; the facet tips land edge_coupler_protrusion
+    # past (south of) the die bottom edge, into the deep-trench zone.
+    num = int(die_params.num_edge_couplers_circuit.value)
+    if num > 0:
+        arr = circuit_edge_coupler_array(num)
+        arr_bb = arr.bbox
+        left_x = -half_w + _p.keepout_width.value + _p.edge_coupler_horizontal_shift.value
+        facet_y = -half_h - _p.edge_coupler_protrusion.value
+        cell.add_placed(
+            arr,
+            "edge_couplers_circuit",
+            x=left_x - arr_bb.xmin,
+            y=facet_y - arr_bb.ymin,
+        )
 
     cell.cell_type = "die_assembly"
     return cell
