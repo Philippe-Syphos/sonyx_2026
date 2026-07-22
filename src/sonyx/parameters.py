@@ -154,7 +154,7 @@ class Parameters(ParametersBase):
         ),
     )
     gsg_modulator_spacing = ParameterField(
-        300.0,
+        1000.0,
         units="um",
         description=(
             "Vertical centre-to-centre spacing between stacked GSG modulators on a "
@@ -163,10 +163,18 @@ class Parameters(ParametersBase):
         ),
     )
     gsg_modulator_vertical_shift = ParameterField(
-        0.0,
+        750.0,
         units="um",
         description=(
             "Vertical offset of the GSG modulator centre from the die centre. "
+            "PLACEHOLDER."
+        ),
+    )
+    gsg_modulator_electrode_length = ParameterField(
+        8500.0,
+        units="um",
+        description=(
+            "Length of the GSG modulator electrode (phase section only, no couplers). "
             "PLACEHOLDER."
         ),
     )
