@@ -16,6 +16,7 @@ centre.
 from __future__ import annotations
 
 import picasso as fw
+from luqia_ln200.cells.bends import cbend_rib_sm_800nm_127um
 from picasso.geometry.ops import rectangle
 from picasso.leaves import make_label
 
@@ -32,8 +33,8 @@ _KEEPOUT_LAYER = "KEEPOUT.drawing"
 _LABEL_LAYER = "WG_RIB.drawing"
 
 # Die-ID label: ~200 um tall glyphs, inset 150 um from the top-left die corner.
-_LABEL_HEIGHT = 200.0
-_LABEL_MARGIN = 150.0
+_LABEL_HEIGHT = 75.0
+_LABEL_MARGIN = 0.0
 
 
 def die_frame(name: str, die_params: DieParameters) -> fw.Component:
@@ -81,12 +82,12 @@ def die_frame(name: str, die_params: DieParameters) -> fw.Component:
     # x=0 with its top edge (valign="top") at y=0, so offset by half its width
     # to left-align it, inset from the top-left corner.
     label = make_label(text=name, layer=_LABEL_LAYER, magnification=_LABEL_HEIGHT, valign="top")
-    label_width = label.bbox.dx
     cell.add_placed(
         label,
         "die_id",
-        x=-half_w + _LABEL_MARGIN + label_width / 2.0,
-        y=half_h - _LABEL_MARGIN,
+        x=-half_w + _LABEL_MARGIN + _p.keepout_width.value,
+        y=-half_h + _LABEL_MARGIN + label.bbox.dx / 2.0 + _p.keepout_width.value,
+        rotation=90.0
     )
 
     # Circuit-side edge-coupler array in the lower-left corner: horizontal row,
@@ -99,12 +100,22 @@ def die_frame(name: str, die_params: DieParameters) -> fw.Component:
         arr_bb = arr.bbox
         left_x = -half_w + _p.keepout_width.value + _p.edge_coupler_horizontal_shift.value
         facet_y = -half_h - _p.edge_coupler_protrusion.value
-        cell.add_placed(
+        ec_inst = cell.add_placed(
             arr,
             "edge_couplers_circuit",
             x=left_x - arr_bb.xmin,
             y=facet_y - arr_bb.ymin,
         )
+        # Loop back the leftmost edge-coupler pair (c0, c1) with a tight 127 um
+        # C-bend U-turn (matches the 127 um coupler pitch) — an alignment loopback.
+        if num >= 2:
+            loop = cell.put(
+                cbend_rib_sm_800nm_127um(),
+                ec_inst.ports.o2_r0_c0,
+                port_to="o2",
+                name="ec_loopback_circuit",
+            )
+            cell.connect(loop.ports.o1, ec_inst.ports.o2_r0_c1)
 
     cell.cell_type = "die_assembly"
     return cell

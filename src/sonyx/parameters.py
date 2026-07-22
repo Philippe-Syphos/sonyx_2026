@@ -129,7 +129,7 @@ class Parameters(ParametersBase):
         ),
     )
     edge_coupler_horizontal_shift = ParameterField(
-        100.0,
+        300.0,
         units="um",
         description=(
             "Extra horizontal offset of the edge-coupler array away from the die's "
