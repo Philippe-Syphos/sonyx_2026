@@ -94,7 +94,7 @@ class Parameters(ParametersBase):
         ),
     )
     grating_coupling_pitch_for_circuits = ParameterField(
-        254.0,
+        127.0,
         units="um",
         description=(
             "Pitch of the grating-coupling test structures (for circuits) "
@@ -102,7 +102,7 @@ class Parameters(ParametersBase):
         ),
     )
     grating_coupling_pitch_for_tests = ParameterField(
-        254.0,
+        127.0,
         units="um",
         description=(
             "Pitch of the grating-coupling test structures (for tests) "
@@ -137,7 +137,7 @@ class Parameters(ParametersBase):
         ),
     )
     bondpad_horizontal_shift = ParameterField(
-        300.0,
+        50.0,
         units="um",
         description=(
             "Extra horizontal offset of the bond-pad array away from the die's "
@@ -145,7 +145,7 @@ class Parameters(ParametersBase):
         ),
     )
     bondpad_vertical_shift = ParameterField(
-        50.0,
+        150.0,
         units="um",
         description=(
             "Extra vertical offset of the bond-pad array up from the die's bottom "
@@ -163,19 +163,35 @@ class Parameters(ParametersBase):
         ),
     )
     gsg_modulator_vertical_shift = ParameterField(
-        750.0,
+        2000.0,
         units="um",
         description=(
-            "Vertical offset of the GSG modulator centre from the die centre. "
-            "PLACEHOLDER."
+            "Bottom GSG modulator's bottom-edge inset above the die bottom edge "
+            "(and, mirrored, the top pair's inset below the top edge). 2 mm on "
+            "rows 2-4; row 1 (die_r1a/b) overrides locally to 750 um to fit R1A's "
+            "four-electrode stack. PLACEHOLDER."
         ),
     )
     gsg_modulator_electrode_length = ParameterField(
-        8500.0,
+        9395.0,
         units="um",
         description=(
             "Length of the GSG modulator electrode (phase section only, no couplers). "
             "PLACEHOLDER."
+        ),
+    )
+    thermistance_bonding_pad_width = ParameterField(
+        500.0,
+        units="um",
+        description=(
+            "Width of the thermistance bonding pad."
+        ),
+    )
+    thermistance_bonding_pad_height = ParameterField(
+        500.0,
+        units="um",
+        description=(
+            "Height of the thermistance bonding pad."
         ),
     )
 
@@ -201,7 +217,7 @@ class DieParameters(ParametersBase):
         ),
     )
     num_bondpads = ParameterField(
-        9,
+        7,
         units="",
         description=(
             "Number of TOP_METAL bond pads in this die's bond-pad array "

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import picasso as fw
 from luqia_ln200.cells.bends import cbend_rib_sm_800nm_127um
+from luqia_ln200.cells.couplers import gratingcoupler_alignment_rib_sm_800nm_ext
+from luqia_ln200.cells.dc import bonding_pad
 from picasso.geometry.ops import rectangle
 from picasso.leaves import make_label
 
@@ -37,11 +39,21 @@ _KEEPOUT_LAYER = "KEEPOUT.drawing"
 _LABEL_LAYER = "WG_RIB.drawing"
 
 # Die-ID label: ~200 um tall glyphs, inset 150 um from the top-left die corner.
-_LABEL_HEIGHT = 75.0
-_LABEL_MARGIN = 0.0
+_LABEL_HEIGHT = 40.0
+_LABEL_MARGIN = 60.0
+
+# Gap (um) between the bond-pad array and the thermistance bonding pad to its
+# left, and how far the pad drops below the array bottom.
+_THERMISTANCE_GAP = 300.0
+_THERMISTANCE_DROP = 100.0
 
 
-def die_scaffold(name: str, die_params: DieParameters) -> fw.Component:
+def die_scaffold(
+    name: str,
+    die_params: DieParameters,
+    bondpad_rotation: float = 90.0,
+    num_bondpads: int | None = None,
+) -> fw.Component:
     """Build the shared die scaffold and return the **live, mutable** cell.
 
     The caller (a per-die builder) keeps building on the returned cell, adding
@@ -65,6 +77,11 @@ def die_scaffold(name: str, die_params: DieParameters) -> fw.Component:
     Args:
         name: Cell name (also the die-ID shown in the corner label).
         die_params: This die's :class:`~sonyx.parameters.DieParameters`.
+        bondpad_rotation: Rotation (deg) of the lower-right bond-pad array —
+            ``90`` (default) stands the row up into a vertical column against the
+            right edge; ``0`` keeps the original horizontal row.
+        num_bondpads: Override for the number of pads in the bond-pad array;
+            ``None`` (default) uses ``die_params.num_bondpads``.
 
     Returns:
         The live die :class:`~picasso.component.Component` for the caller to
@@ -128,23 +145,71 @@ def die_scaffold(name: str, die_params: DieParameters) -> fw.Component:
                 name="ec_loopback_circuit",
             )
             cell.connect(loop.ports.o1, ec_inst.ports.o2_r0_c1)
+            # One additional edge coupler just outboard (one pitch left) of the
+            # alignment loop, aligned to the array (same identical coupler+lead
+            # unit) — an extra reference facet beside the loopback.
+            extra = circuit_edge_coupler_array(1)
+            cell.add_placed(
+                extra,
+                "edge_coupler_extra",
+                x=(left_x - arr_bb.xmin) - _p.edge_coupling_pitch_for_circuits.value,
+                y=facet_y - arr_bb.ymin,
+            )
 
     # Bond-pad array (TOP_METAL) in the lower-right corner: horizontal row tiled
     # with make_array. Rightmost pad clears the right keep-out band plus
     # bondpad_horizontal_shift; the row bottom clears the bottom keep-out plus
     # bondpad_vertical_shift (so wirebonded pads stay off the die edge).
-    num_bp = int(die_params.num_bondpads.value)
+    num_bp = int(num_bondpads if num_bondpads is not None else die_params.num_bondpads.value)
+    right_x = half_w - _p.keepout_width.value - _p.bondpad_horizontal_shift.value
+    bottom_y = -half_h + _p.keepout_width.value + _p.bondpad_vertical_shift.value
     if num_bp > 0:
         bp = bondpad_array(num_bp)
         bp_bb = bp.bbox
-        right_x = half_w - _p.keepout_width.value - _p.bondpad_horizontal_shift.value
-        bottom_y = -half_h + _p.keepout_width.value + _p.bondpad_vertical_shift.value
+        # Anchor the array's (post-rotation) bottom-right corner to (right_x,
+        # bottom_y). rotation=90 maps (x, y) -> (-y, x), so the placed right edge
+        # is -ymin and the placed bottom is xmin; rotation=0 keeps the raw bbox.
+        if bondpad_rotation == 90.0:
+            placed_xmax, placed_ymin = -bp_bb.ymin, bp_bb.xmin
+            array_width = bp_bb.dy
+        else:
+            placed_xmax, placed_ymin = bp_bb.xmax, bp_bb.ymin
+            array_width = bp_bb.dx
         cell.add_placed(
             bp,
             "bondpads",
-            x=right_x - bp_bb.xmax,
-            y=bottom_y - bp_bb.ymin,
+            x=right_x - placed_xmax,
+            y=bottom_y - placed_ymin,
+            rotation=bondpad_rotation,
         )
+        # Thermistance bonding pad in the lower-right region, _THERMISTANCE_GAP
+        # left of the bond-pad array and bottom-aligned to it.
+        therm = bonding_pad(
+            x=_p.thermistance_bonding_pad_width.value,
+            y=_p.thermistance_bonding_pad_height.value,
+        )
+        tb = therm.bbox
+        cell.add_placed(
+            therm,
+            "thermistance_bonding_pad",
+            x=((right_x - array_width) - _THERMISTANCE_GAP) - tb.xmax,
+            y=(bottom_y - _THERMISTANCE_DROP) - tb.ymin,
+        )
+
+    # One N-S grating-coupler alignment loop tucked into each of the four die
+    # corners, flush to the keep-out inner walls (fibre-alignment references
+    # common to every die).
+    left_inner, right_inner = -half_w + kw, half_w - kw
+    bot_inner, top_inner = -half_h + kw, half_h - kw
+    ab = gratingcoupler_alignment_rib_sm_800nm_ext().bbox
+    corners = {
+        "gc_align_tl": (left_inner - ab.xmin, top_inner - ab.ymax),
+        "gc_align_tr": (right_inner - ab.xmax, top_inner - ab.ymax),
+        "gc_align_bl": (left_inner - ab.xmin, bot_inner - ab.ymin),
+        "gc_align_br": (right_inner - ab.xmax, bot_inner - ab.ymin),
+    }
+    for cname, (cx, cy) in corners.items():
+        cell.add_placed(gratingcoupler_alignment_rib_sm_800nm_ext(), cname, x=cx, y=cy)
 
     cell.cell_type = "die_assembly"
     return cell

@@ -12,41 +12,83 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
+from .test_cells_die_r1a import test_waveguide_cutback_sm, test_waveguide_cutback_ull
+
+# Horizontal gap between the SM and ULL cutback test cells (um).
+_CUTBACK_GAP = 200.0
 
 
 def die_r1a() -> fw.Component:
     """Build and return the R1·A die."""
     params = DieParameters()
-    cell = die_scaffold("die_R1A", params)
+    cell = die_scaffold("die_R1A", params, bondpad_rotation=0.0)
     # Two GSG phase-modulator electrodes (SM on column A) stacked vertically:
     # bottom one gsg_modulator_vertical_shift above the die bottom edge, top one
     # gsg_modulator_spacing (centre-to-centre) above it. Placed directly so their
     # ports (o1-o4 optical, e1/e2 electrode) are reachable for per-die routing.
+    half_w = _p.die_width.value / 2.0
     half_h = _p.die_height.value / 2.0
     modulator = pdk.cells[params.gsg_modulator_cell.value](
         length=_p.gsg_modulator_electrode_length.value,
     )
     mb = modulator.bbox
     x0 = -mb.center_x  # centre the electrode in x
-    bot_y = -half_h + _p.gsg_modulator_vertical_shift.value - mb.ymin
+    # Row 1 keeps the smaller 750 um shift (rows 2-4 use the 2 mm
+    # gsg_modulator_vertical_shift default): the 2 mm shift would collide R1A's
+    # two mirror pairs, which the four-electrode stack has no room for.
+    _mod_shift = 750.0
+    bot_y = -half_h + _mod_shift - mb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
     mod_bot = cell.add_placed(modulator, "gsg_modulator_bot", x=x0, y=bot_y)
     mod_top = cell.add_placed(modulator, "gsg_modulator_top", x=x0, y=top_y)
-    # RF input on the right (east): a via lifts each modulator's bottom-metal
-    # electrode (e2) up to top metal (same chain for SM and multimode).
-    cell.put(
-        pdk.cells["gsg_via_electrode_top_bot_holes_50ohms"](),
-        mod_bot.ports.e2,
-        port_to="bot_e1",
-        name="rf_via_bot",
-    )
-    cell.put(
-        pdk.cells["gsg_via_electrode_top_bot_holes_50ohms"](),
-        mod_top.ports.e2,
-        port_to="bot_e1",
-        name="rf_via_top",
-    )
+    # Two more electrodes as a mirror pair descending from the top edge: same
+    # vertical shift (top-edge inset) and centre-to-centre spacing as the bottom
+    # pair takes from the bottom.
+    top2_y = half_h - _mod_shift - mb.ymax
+    bot2_y = top2_y - _p.gsg_modulator_spacing.value
+    mod_top_2 = cell.add_placed(modulator, "gsg_modulator_top_2", x=x0, y=top2_y)
+    mod_bot_2 = cell.add_placed(modulator, "gsg_modulator_bot_2", x=x0, y=bot2_y)
+    # RF launch (via -> electrode-to-pads taper -> GSG bondpad triplet, wrapped in
+    # one PDK cell) on both electrode ends of every modulator. put() auto-rotates,
+    # so the "_in" launch on e2 runs east and the "_out" launch on e1 mirrors and
+    # runs west -- no per-side port bookkeeping needed.
+    for m, tag in (
+        (mod_bot, "bot"),
+        (mod_top, "top"),
+        (mod_bot_2, "bot2"),
+        (mod_top_2, "top2"),
+    ):
+        cell.put(
+            pdk.cells["gsg_launch_electrode_to_pads_top_metal_50ohms"](),
+            m.ports.e2,
+            port_to="e1",
+            name=f"rf_launch_{tag}_in",
+        )
+        cell.put(
+            pdk.cells["gsg_launch_electrode_to_pads_top_metal_50ohms"](),
+            m.ports.e1,
+            port_to="e1",
+            name=f"rf_launch_{tag}_out",
+        )
     # --- R1·A per-die content (see module docstring for planned DUTs) ---
+    # # Test-cell section, top-left corner: SM waveguide-loss (cutback) structure.
+    # # Sits flush inside the top-left keep-out corner (top region is otherwise
+    # # free -- label is bottom-left, modulators / RF are lower-centre).
+    # top_inner = half_h - _p.keepout_width.value
+    # cutback = test_waveguide_cutback_sm()
+    # cb_bb = cutback.bbox
+    # sm_x = -half_w + _p.keepout_width.value - cb_bb.xmin
+    # cell.add_placed(cutback, "test_waveguide_cutback_sm", x=sm_x, y=top_inner - cb_bb.ymax)
+    # # ULL-spiral twin just to the right of the SM cutback, tops aligned.
+    # ull = test_waveguide_cutback_ull()
+    # ull_bb = ull.bbox
+    # sm_right = sm_x + cb_bb.xmax
+    # cell.add_placed(
+    #     ull,
+    #     "test_waveguide_cutback_ull",
+    #     x=(sm_right + _CUTBACK_GAP) - ull_bb.xmin,
+    #     y=top_inner - ull_bb.ymax,
+    # )
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

@@ -12,6 +12,7 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
+from ._head_coupler_block import add_head_and_couplers
 
 
 def die_r4a() -> fw.Component:
@@ -32,21 +33,91 @@ def die_r4a() -> fw.Component:
     top_y = bot_y + _p.gsg_modulator_spacing.value
     mod_bot = cell.add_placed(modulator, "gsg_modulator_bot", x=x0, y=bot_y)
     mod_top = cell.add_placed(modulator, "gsg_modulator_top", x=x0, y=top_y)
-    # RF input on the right (east): a via lifts each modulator's bottom-metal
-    # electrode (e2) up to top metal (same chain for SM and multimode).
-    cell.put(
+    # RF launch on both electrode ends: a via lifts each modulator's bottom-metal
+    # electrode up to top metal, then a width taper matches the electrode bundle to
+    # the GSG pad launch, ending on a GSG bondpad triplet. Input (east, e2) and
+    # output (west, e1) chains are mirror images. NOTE: placeholder floorplan --
+    # some variations will drop the output pads for a terminator once decided, so
+    # the two sides are kept as explicit per-end puts rather than a shared helper.
+    # -- input (east, e2): via extends +x, continuation on top_e2, taper/pads on e1
+    via_bot_in = cell.put(
         pdk.cells["gsg_via_electrode_top_bot_holes_50ohms"](),
         mod_bot.ports.e2,
         port_to="bot_e1",
-        name="rf_via_bot",
+        name="rf_via_bot_in",
     )
-    cell.put(
+    via_top_in = cell.put(
         pdk.cells["gsg_via_electrode_top_bot_holes_50ohms"](),
         mod_top.ports.e2,
         port_to="bot_e1",
-        name="rf_via_top",
+        name="rf_via_top_in",
     )
-    # --- R4·A per-die content (see module docstring for planned DUTs) ---
+    taper_bot_in = cell.put(
+        pdk.cells["gsg_taper_electrode_to_pads_top_metal_50ohms"](),
+        via_bot_in.ports.top_e2,
+        port_to="e1",
+        name="rf_taper_bot_in",
+    )
+    taper_top_in = cell.put(
+        pdk.cells["gsg_taper_electrode_to_pads_top_metal_50ohms"](),
+        via_top_in.ports.top_e2,
+        port_to="e1",
+        name="rf_taper_top_in",
+    )
+    cell.put(
+        pdk.cells["gsg_bondpads_top_metal_50ohms"](),
+        taper_bot_in.ports.e2,
+        port_to="e1",
+        name="rf_pads_bot_in",
+    )
+    cell.put(
+        pdk.cells["gsg_bondpads_top_metal_50ohms"](),
+        taper_top_in.ports.e2,
+        port_to="e1",
+        name="rf_pads_top_in",
+    )
+    # -- output (west, e1): via extends -x, continuation on top_e1. Taper e1
+    # (electrode side) mates the via and e2 (pad side) mates the pads -- same
+    # electrode->pad sense as the input side, just mirrored in x.
+    via_bot_out = cell.put(
+        pdk.cells["gsg_via_electrode_top_bot_holes_50ohms"](),
+        mod_bot.ports.e1,
+        port_to="bot_e2",
+        name="rf_via_bot_out",
+    )
+    via_top_out = cell.put(
+        pdk.cells["gsg_via_electrode_top_bot_holes_50ohms"](),
+        mod_top.ports.e1,
+        port_to="bot_e2",
+        name="rf_via_top_out",
+    )
+    taper_bot_out = cell.put(
+        pdk.cells["gsg_taper_electrode_to_pads_top_metal_50ohms"](),
+        via_bot_out.ports.top_e1,
+        port_to="e1",
+        name="rf_taper_bot_out",
+    )
+    taper_top_out = cell.put(
+        pdk.cells["gsg_taper_electrode_to_pads_top_metal_50ohms"](),
+        via_top_out.ports.top_e1,
+        port_to="e1",
+        name="rf_taper_top_out",
+    )
+    cell.put(
+        pdk.cells["gsg_bondpads_top_metal_50ohms"](),
+        taper_bot_out.ports.e2,
+        port_to="e2",
+        name="rf_pads_bot_out",
+    )
+    cell.put(
+        pdk.cells["gsg_bondpads_top_metal_50ohms"](),
+        taper_top_out.ports.e2,
+        port_to="e2",
+        name="rf_pads_top_out",
+    )
+    # --- R4·A per-die content ---
+    # modulator_head + directional couplers test block (shared with R4B).
+    add_head_and_couplers(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell
