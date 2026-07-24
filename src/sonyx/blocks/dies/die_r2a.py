@@ -36,7 +36,8 @@ def die_r2a() -> fw.Component:
         length=_p.gsg_modulator_electrode_length.value + freed,
     )
     mb = modulator.bbox
-    x0 = -mb.center_x  # centre the electrode in x
+    # Centre the electrode in x, then shift both electrodes 220 um to the left.
+    x0 = -mb.center_x - 220.0
     bot_y = -half_h + _p.gsg_modulator_vertical_shift.value - mb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
     mod_bot = cell.add_placed(modulator, "gsg_modulator_bot", x=x0, y=bot_y)

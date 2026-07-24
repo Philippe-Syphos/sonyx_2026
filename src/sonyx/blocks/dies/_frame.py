@@ -22,6 +22,7 @@ import picasso as fw
 from luqia_ln200.cells.bends import cbend_rib_sm_800nm_127um
 from luqia_ln200.cells.couplers import gratingcoupler_alignment_rib_sm_800nm_ext
 from luqia_ln200.cells.dc import bonding_pad
+from luqia_ln200.cells.waveguides import spiral_rib_sm_800nm_for_length
 from picasso.geometry.ops import rectangle
 from picasso.leaves import make_label
 
@@ -29,6 +30,7 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..bondpads import bondpad_array
 from ..edge_couplers import circuit_edge_coupler_array
+from ..pcm import add_pcm_block
 
 # String layers → resolved against the active PDK at materialize time.
 #   DIE.boundary   = the die-defining rectangle (GDS 0/0, reference, not printed).
@@ -46,6 +48,16 @@ _LABEL_MARGIN = 60.0
 # left, and how far the pad drops below the array bottom.
 _THERMISTANCE_GAP = 300.0
 _THERMISTANCE_DROP = 100.0
+
+# Gap (um) between the per-die PCM & calibration block's right edge and the
+# thermistance bonding pad it sits next to (docs/pcm_cells.md).
+_PCM_GAP = 200.0
+
+# Single SM loss/delay spiral placed just east of the rightmost circuit edge
+# coupler: target path length (5 cm), loop count, and gap from the array edge.
+_SPIRAL_TEST_LENGTH = 50000.0
+_SPIRAL_N_LOOPS = 8
+_SPIRAL_GAP = 100.0
 
 
 def die_scaffold(
@@ -155,6 +167,18 @@ def die_scaffold(
                 x=(left_x - arr_bb.xmin) - _p.edge_coupling_pitch_for_circuits.value,
                 y=facet_y - arr_bb.ymin,
             )
+        # Single SM loss/delay spiral (3 cm, long side E-W) just east of the
+        # rightmost circuit edge coupler, sitting inside the bottom keep-out.
+        spiral = spiral_rib_sm_800nm_for_length(
+            target_length=_SPIRAL_TEST_LENGTH, n_loops=_SPIRAL_N_LOOPS
+        )
+        sp_bb = spiral.bbox
+        cell.add_placed(
+            spiral,
+            "test_spiral_sm",
+            x=((left_x + arr_bb.dx) + _SPIRAL_GAP) - sp_bb.xmin,
+            y=(-half_h + _p.keepout_width.value) - sp_bb.ymin,
+        )
 
     # Bond-pad array (TOP_METAL) in the lower-right corner: horizontal row tiled
     # with make_array. Rightmost pad clears the right keep-out band plus
@@ -163,6 +187,9 @@ def die_scaffold(
     num_bp = int(num_bondpads if num_bondpads is not None else die_params.num_bondpads.value)
     right_x = half_w - _p.keepout_width.value - _p.bondpad_horizontal_shift.value
     bottom_y = -half_h + _p.keepout_width.value + _p.bondpad_vertical_shift.value
+    # Thermistance pad's placed left / top edges — the PCM block anchors to them.
+    therm_left: float | None = None
+    therm_top: float | None = None
     if num_bp > 0:
         bp = bondpad_array(num_bp)
         bp_bb = bp.bbox
@@ -189,12 +216,11 @@ def die_scaffold(
             y=_p.thermistance_bonding_pad_height.value,
         )
         tb = therm.bbox
-        cell.add_placed(
-            therm,
-            "thermistance_bonding_pad",
-            x=((right_x - array_width) - _THERMISTANCE_GAP) - tb.xmax,
-            y=(bottom_y - _THERMISTANCE_DROP) - tb.ymin,
-        )
+        therm_x = ((right_x - array_width) - _THERMISTANCE_GAP) - tb.xmax
+        therm_y = (bottom_y - _THERMISTANCE_DROP) - tb.ymin
+        cell.add_placed(therm, "thermistance_bonding_pad", x=therm_x, y=therm_y)
+        therm_left = therm_x + tb.xmin
+        therm_top = therm_y + tb.ymax
 
     # One N-S grating-coupler alignment loop tucked into each of the four die
     # corners, flush to the keep-out inner walls (fibre-alignment references
@@ -210,6 +236,14 @@ def die_scaffold(
     }
     for cname, (cx, cy) in corners.items():
         cell.add_placed(gratingcoupler_alignment_rib_sm_800nm_ext(), cname, x=cx, y=cy)
+
+    # Per-die PCM & calibration block (docs/pcm_cells.md): placed just left of
+    # the thermistance bonding pad (its DC-pad end nearest it), tops aligned.
+    # Falls back to the top margin if this die has no bond-pad array.
+    if therm_left is not None and therm_top is not None:
+        add_pcm_block(cell, x_right=therm_left - _PCM_GAP, y_top=therm_top)
+    else:
+        add_pcm_block(cell, x_right=right_inner, y_top=top_inner)
 
     cell.cell_type = "die_assembly"
     return cell

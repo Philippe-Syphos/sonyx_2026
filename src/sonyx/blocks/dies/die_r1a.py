@@ -12,6 +12,7 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
+from ._head_coupler_block import add_head_and_couplers
 from .test_cells_die_r1a import test_waveguide_cutback_sm, test_waveguide_cutback_ull
 
 # Horizontal gap between the SM and ULL cutback test cells (um).
@@ -33,21 +34,20 @@ def die_r1a() -> fw.Component:
     )
     mb = modulator.bbox
     x0 = -mb.center_x  # centre the electrode in x
-    # Row 1 keeps the smaller 750 um shift (rows 2-4 use the 2 mm
-    # gsg_modulator_vertical_shift default): the 2 mm shift would collide R1A's
-    # two mirror pairs, which the four-electrode stack has no room for.
-    _mod_shift = 750.0
+    # Row 1 uses a 1250 um shift (rows 2-4 use the 2 mm
+    # gsg_modulator_vertical_shift default): the full 2 mm shift would collide
+    # R1A's two mirror pairs, which the four-electrode stack has no room for.
+    _mod_shift = 1250.0
     bot_y = -half_h + _mod_shift - mb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
     mod_bot = cell.add_placed(modulator, "gsg_modulator_bot", x=x0, y=bot_y)
     mod_top = cell.add_placed(modulator, "gsg_modulator_top", x=x0, y=top_y)
-    # Two more electrodes as a mirror pair descending from the top edge: same
-    # vertical shift (top-edge inset) and centre-to-centre spacing as the bottom
-    # pair takes from the bottom.
+    # One more electrode descending from the top edge: same vertical shift
+    # (top-edge inset) as the bottom pair takes from the bottom. Its former
+    # mirror-pair partner now lives on R1B -- the two top modulators are split
+    # one per die.
     top2_y = half_h - _mod_shift - mb.ymax
-    bot2_y = top2_y - _p.gsg_modulator_spacing.value
     mod_top_2 = cell.add_placed(modulator, "gsg_modulator_top_2", x=x0, y=top2_y)
-    mod_bot_2 = cell.add_placed(modulator, "gsg_modulator_bot_2", x=x0, y=bot2_y)
     # RF launch (via -> electrode-to-pads taper -> GSG bondpad triplet, wrapped in
     # one PDK cell) on both electrode ends of every modulator. put() auto-rotates,
     # so the "_in" launch on e2 runs east and the "_out" launch on e1 mirrors and
@@ -55,7 +55,6 @@ def die_r1a() -> fw.Component:
     for m, tag in (
         (mod_bot, "bot"),
         (mod_top, "top"),
-        (mod_bot_2, "bot2"),
         (mod_top_2, "top2"),
     ):
         cell.put(
@@ -71,6 +70,15 @@ def die_r1a() -> fw.Component:
             name=f"rf_launch_{tag}_out",
         )
     # --- R1·A per-die content (see module docstring for planned DUTs) ---
+    # Input modulator_head + directional coupler (east) and one output DC above
+    # each of the lower two modulators (west) -- the shared head+coupler block.
+    # R1A uses the wrapped RF launch (no rf_pads_bot_in), so hand the helper the
+    # bottom input launch's east edge as the anchor: mod_bot's east port plus the
+    # launch's e1-to-east extent (port-based / Component.bbox, ty-clean).
+    launch = pdk.cells["gsg_launch_electrode_to_pads_top_metal_50ohms"]()
+    launch_east_from_e1 = launch.bbox.xmax - launch.ports["e1"].position[0]
+    pad_east_x = mod_bot.ports.e2.position[0] + launch_east_from_e1
+    add_head_and_couplers(cell, input_anchor=(pad_east_x, mod_bot.ports.e1.position[1]))
     # # Test-cell section, top-left corner: SM waveguide-loss (cutback) structure.
     # # Sits flush inside the top-left keep-out corner (top region is otherwise
     # # free -- label is bottom-left, modulators / RF are lower-centre).

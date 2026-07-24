@@ -9,16 +9,16 @@ from __future__ import annotations
 import picasso as fw
 from luqia_ln200 import pdk
 
-from ...parameters import DieParametersMultimode
+from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
 
 
 def die_r2b() -> fw.Component:
     """Build and return the R2·B die."""
-    params = DieParametersMultimode()
+    params = DieParameters()
     cell = die_scaffold("die_R2B", params)
-    # Two GSG phase-modulator electrodes (multimode on column B) stacked
+    # Two GSG phase-modulator electrodes (SM, same electrode as R2A) stacked
     # vertically: bottom one gsg_modulator_vertical_shift above the die bottom
     # edge, top one gsg_modulator_spacing (centre-to-centre) above it. Placed
     # directly so their ports (o1-o4 optical, e1/e2 electrode) are reachable.

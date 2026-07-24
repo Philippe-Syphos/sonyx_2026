@@ -1,101 +1,143 @@
-# Sonyx floorplan — handoff
+# Sonyx floorplan — handoff (continue in new chat)
 
-Continue work on the **sonyx_2026** photonic reticle layout (2×4 die grid) using the
-**luqia_ln200** PDK + **picasso** framework. This session was floorplanning the 8
-dies' test/active content; below is the exact current state.
+Continue building the **sonyx_2026** photonic reticle (2×4 die grid) using the
+**luqia_ln200** PDK (800 nm TFLN) + **picasso** framework.
 
-## 1. Repos & boundaries (read/write = editable; never edit read-only)
+## 1. Repos & boundaries
 
 | Repo | Path | Access |
 |---|---|---|
 | `sonyx_2026` | `/Users/philippe/Github/sonyx_2026` | **read/write** (the layout) |
-| `pdk-luqia-ln200` | `/Users/philippe/Github/pdk-luqia-ln200` | **read/write** (the PDK, 800 nm TFLN) |
+| `pdk-luqia-ln200` | `/Users/philippe/Github/pdk-luqia-ln200` | **read/write** (the PDK) |
 | `picasso-pdk-dev/picasso` | `/Users/philippe/Github/picasso-pdk-dev/picasso` | **read/write** (framework) |
 | bare `picasso`, `pdk-lxt-ltpro-picasso`, `buddha_lxtltpro_202602` | — | **read-only** (patterns only) |
 
 ## 2. Workflow & conventions
 
-- **uv-managed**, run from repo root. Build: `uv run python -m sonyx.artifacts` → GDS-only
-  into `layout_artifacts/sonyx.gds`.
-- **Verify numerically** (bbox / port positions via the built cells), **never** by render.
-  No PNG/SVG.
-- **Keep green on sonyx:** `uv run ruff check src/sonyx` and `uv run ty check src/sonyx`.
-  Line length 100, ASCII in code.
-  - **ty gotcha:** `Component.bbox` is ty-clean, but `Instance.bbox` types as `BBox | None`
-    (errors). Anchor placements to **ports** (`inst.ports.xN.position`) or to a
-    `Component.bbox` computed before placing — not `Instance.bbox`.
-  - The PDK repo is **not** ruff/ty-clean at baseline (pre-existing unicode / line-length /
-    object-typing); only add no *new* errors there.
-  - **Known pre-existing** `die_r1a.py` ruff errors (F401 unused `test_waveguide_cutback_*`
-    imports, F841 `half_w`) come from a commented-out cutback block — leave them; they clear
-    when that block is re-enabled.
+- **uv-managed, run from the repo root.** cwd sometimes resets between tool
+  calls — always `cd /Users/philippe/Github/sonyx_2026` (or the PDK) at the
+  start of a shell command.
+- Build: `uv run python -m sonyx.artifacts` → GDS-only into
+  `layout_artifacts/sonyx.gds`.
+- **Verify numerically** (bbox / port positions / overlap scans on the built
+  cells), **never** by render. No PNG/SVG.
+- **Keep green on sonyx:** `uv run ruff check src/sonyx` and
+  `uv run ty check src/sonyx`. Line length 100, ASCII in code.
+  - **ty gotcha:** `Component.bbox` is ty-clean, but `Instance.bbox` types as
+    `BBox | None`. Anchor placements to **ports**
+    (`inst.ports.xN.position`, ty-clean) or to a `Component.bbox` computed
+    before placing — never `Instance.bbox`.
+  - **sonyx layer strings:** pass layers to `rectangle()`/leaves as strings
+    (`"TOP_METAL.drawing"`, `"WG_RIB.field"`), not `_layers.X` objects (those
+    type as `object` and fail ty in sonyx). This is the `_frame.py` convention.
+  - The **PDK repo is not ruff/ty-clean at baseline**; only add no *new*
+    errors. Baseline `rf.py` = 15 ruff errors; `cells/__init__.py` has 2
+    pre-existing E501.
+  - **Known pre-existing sonyx ruff** (leave them): 3 in `die_r1a.py` (F401
+    `test_waveguide_cutback_sm/_ull`, F841 `half_w`) from a commented-out
+    cutback block.
 - **Uncommitted** — commit only when asked; branch off `main` first.
+- Multi-die shared content: make each cell a `@recipe` (cached, shared across
+  dies like PDK cells) and place with a plain helper — a plain wrapper
+  `Component` reused per die causes `ComponentNameCollisionError` at reticle
+  assembly.
 
-## 3. Architecture
+## 3. Current state (this session's work)
 
-- `blocks/dies/_frame.py::die_scaffold(name, die_params, bondpad_rotation=90.0, num_bondpads=None)`
-  — shared per-die scaffold: DIE boundary, KEEPOUT ring, ID label, circuit edge-coupler array
-  (lower-left) + leftmost-pair loopback + one **extra outboard edge coupler**, TOP_METAL
-  **bond-pad array** (lower-right), **one N-S GC alignment loop in each of the 4 corners**, and
-  a **500×500 µm thermistance `bonding_pad`** 300 µm left of the array + 100 µm down
-  (`_THERMISTANCE_GAP=300`, `_THERMISTANCE_DROP=100`). Returns the live cell.
-  - `bondpad_rotation`: 90° = vertical column (default); **R1A/R1B pass 0°** (horizontal row).
-  - `num_bondpads`: override; **R3A passes 8**, all others 7.
-- `blocks/dies/die_r{1..4}{a,b}.py` — per-die builders: call `die_scaffold`, place modulators
-  + RF chain, then per-die content.
-- **Shared helpers (new this session):**
-  - `blocks/dies/_head_coupler_block.py::add_head_and_couplers(cell, second_input_head=False, extra_input_spacing=0.0)`
-    — places `test_modulator_head` (dual-bias, `second_bias_tops=True`) + below it either a DC
-    (`test_directional_coupler`) or a second head (`test_modulator_head_2` when
-    `second_input_head=True`), plus two output DCs (`test_dc_out_bot/top`) anchored to
-    `gsg_modulator_bot/top.e1` (so they track termination/length). Constants: `_HEAD_SHIFT_X/Y`,
-    `_HEAD_DC_SPACING`, `_OUT_DC_SHIFT_X=-20/_Y=300`.
-  - `blocks/dies/test_cells_die_r1a.py::test_waveguide_cutback_sm/_ull()` — GC cutback (outer
-    loopback pair + inner GC array + 4 rotated delay spirals 2→10 cm). **Currently commented
-    out in `die_r1a.py`.**
+**Per-die modulators / electrodes:**
 
-## 4. Current per-die state (verified)
+- **R1A** — 3 modulators (bottom pair `gsg_modulator_bot/top` + single top-edge
+  `gsg_modulator_top_2`), wrapped RF launch. Modulator vertical shift =
+  **1250 µm** (row-1). Has head + input-DC + two output-DCs (via
+  `add_head_and_couplers(input_anchor=...)`; R1A uses the wrapped launch so it
+  passes the launch east edge). Bondpads horizontal (`bondpad_rotation=0.0`).
+  Cutback test block still commented out.
+- **R1B** — now **SM** (`DieParameters`, was multimode), bondpads **vertical**
+  (default rotation), 3 modulators (added `gsg_modulator_top_2` with a full
+  explicit via→taper→pads chain), shift 1250, head + couplers (R4A-style
+  default anchor).
+- **R2A** — 2 mods, output terminated, modulator length = global + freed;
+  **both electrodes shifted 220 µm left** (`x0 = -mb.center_x - 220`). Head +
+  couplers.
+- **R2B** — now **SM** (`DieParameters`, was multimode). 2 mods + explicit RF
+  chain.
+- **R3A** — 2 mods, two input heads + input DC, 8 bondpads.
+- **R3B** — **bespoke widened-gap electrodes** (the "safe" die). Two inline SM
+  modulators via local `_bespoke_gap_modulator(length, gap)`: top gap =
+  `gsg_gap + 0.5` (6.0 µm), bottom gap = `gsg_gap + 1.0` (6.5 µm), pinned to
+  the live PDK `gsg_gap`. Bespoke via via local `_bespoke_via(gap)` =
+  `_build_gsg_via(bot_xs=bespoke, top_xs=gsg_electrode_top_metal_50ohms)`. Two
+  input heads (no input DC) + output DCs.
+- **R4A / R4B** — 2 mods, head + couplers. R4B is the **only multimode** die
+  now (`DieParametersMultimode`).
+- Rows 2–4 modulator shift = 2 mm default; row 1 = 1250 µm local.
 
-- **R1A** — 4 stacked modulators (bottom pair + top pair, `gsg_modulator_{bot,top}` and
-  `..._2`), each with a **wrapped RF launch** (`gsg_launch_electrode_to_pads_top_metal_50ohms`)
-  on both ends. Bondpads **horizontal**. Cutback test block **commented out**. Modulator shift
-  = 750 µm (row-1 exception).
-- **R1B** — 2 modulators + RF pads. Bondpads **horizontal**. Shift 750.
-- **R2A** — 2 mods; **output (west) terminated** (`gsg_terminator_top_metal_50ohms_parallel`
-  replaces output taper+pads); input keeps pads; **modulator length = global + 455 µm** (the
-  freed output length, computed from cell sizes); head+DC+output-DCs combo.
-- **R2B, R3B** — 2 mods + RF pads only.
-- **R3A** — 2 mods; **two input heads** (`extra_input_spacing=100` → 160 µm apart) + **input
-  directional coupler** (`test_input_dc`) centred between the heads, 230 µm left
-  (`_INPUT_DC_GAP`); output DCs; **8 bondpads**.
-- **R4A, R4B** — 2 mods; standard head+DC input + output DCs combo. R4B is column-B (multimode
-  modulator).
-- Rows 2–4 modulator shift = **2 mm** (`gsg_modulator_vertical_shift=2000`); **row 1 overrides
-  to 750** locally.
-- `bondpad_vertical_shift=150`, `bondpad_horizontal_shift=50`, `num_bondpads=7`.
+**PCM & calibration block** (`src/sonyx/blocks/pcm.py`, `docs/pcm_cells.md`):
+stamped on every die by `die_scaffold` via `add_pcm_block(cell, x_right,
+y_top)`, placed **next to the thermistance bonding pad** (right edge 200 µm
+west of it, tops aligned). Cells (each a `@recipe`, packed L→R by bbox with
+per-cell leading gaps):
 
-## 5. New PDK cells this session (all in `luqia_ln200`, registered in `cells/__init__.py`)
+- `pcm_open_gsg` — open GSG pads.
+- `pcm_shorted_gsg` — GSG pads + low-R short bar (`gsg_short_top_metal_50ohms`).
+- `pcm_ring_stack` — two all-pass rings (gaps 0.8 & 0.4 µm) stacked vertically
+  25 µm apart; each is the buddha ring-test pattern (2-up 127 µm GC column,
+  ring on a folded bus, rotated 90°, **no GC→bend lead-in** — the fold returns
+  exactly to the bottom GC). Uses PDK `ringresonator_allpass_rib_sm_800nm`.
+- `pcm_bondpad_1x2` — two `bondpad_for_test_top` pads (long side N-S) with
+  `heater_cr` centered below, raised 75 µm, **no routing** (heater not yet
+  wired to pads).
+- Removed earlier: open-DC pair, dc-short, grating loopback, all labels.
 
-- `couplers.py`: `gratingcoupler_loopback_rib_sm_800nm_ext/_ord` (behind-routed loopback),
-  `gratingcoupler_alignment_rib_sm_800nm_ext` (GC + L-bend U-turn, **127 µm pitch**; the `_ord`
-  alignment was removed).
-- `rf.py`: `gsg_launch_electrode_to_pads_top_metal_50ohms` (wraps via→taper→pads; one input
-  port `e1`; `put()` auto-rotates for either electrode end). Via moat now grows on all 4 edges.
-- `waveguides.py`: `spiral_rib_sm_800nm_for_length` and
-  `spiral_rib_ull_horizontal_800nm_for_length` (target-total-length spirals).
-- `dc.py`: `bondpad_for_test_top/_top_bot/_top_heater` (400×200 µm test bond pads).
+**Per-die loss spiral:** `test_spiral_sm` in `die_scaffold` — a single SM
+`spiral_rib_sm_800nm_for_length(target_length=50000, n_loops=8)` (5 cm, 8
+loops, long side E-W, footprint ~2725×290 µm), placed 100 µm east of the
+rightmost circuit edge coupler, inside the bottom keepout.
 
-## 6. Open items / flags
+## 4. New PDK cells this session (`luqia_ln200`, registered in `cells/__init__.py`)
 
-- **R2A modulator is centre-placed**, so growing it by 455 µm shifts the footprint rather than
-  pinning the output edge — revisit if the west extent must match the standard dies.
-- **R2A output DCs / R3A input DC not yet routed** to the modulator heads (pitch mismatch →
-  needs fan-out routing).
-- **R4A/R4B (and likely others): output GSG pads extend ~48 µm past the die's left edge** — the
-  manual output RF chain is longer than the die can fit on the west; needs a fix (shorter taper
-  or rethink).
-- **R1A cutback** is commented out; re-enable when ready (restores the `half_w` / import usage).
-- Overlaps generally not chased yet (placeholder floorplan).
+- `tech/cross_sections.py`: **`rib_ssm_800nm`** super-single-mode rib (400 nm
+  core, `rib_super_singlemode_width` in `parameters.py`) — "safer" SM, more
+  margin below the multimode cutoff. Not yet used by any cell.
+- `cells/resonators.py` (**new file**):
+  **`ringresonator_allpass_rib_sm_800nm(radius, gap, bus_length)`** — wraps
+  `make_ring_allpass` on `rib_sm_800nm` at `ring_points=512` (smooth circle).
+- `cells/rf.py`: **`gsg_short_top_metal_50ohms(length=40)`** — solid low-R
+  TOP_METAL bar shorting signal↔grounds; port `e1` on
+  `gsg_pads_top_metal_50ohms`.
 
-**First step in the new chat:** run `uv run python -m sonyx.artifacts` + `uv run ruff/ty check
-src/sonyx` to confirm green, then continue floorplanning.
+## 5. Open items / pending
+
+- **R3B bespoke via — top-metal fix (HIGHEST PRIORITY, promised but not
+  done).** The user wants bottom metal at the bespoke (widened) gap and **top
+  metal physically at the PDK gap**, with the via hole-array bridging the
+  sub-µm ground offset (a "true split-gap via"). The current
+  `_build_gsg_via(bot=bespoke, top=PDK)` draws top & bottom metal
+  **congruently at the bespoke pitch** (the PDK via stamp is congruent) and
+  only advertises PDK geometry on the top port — so the ≤1 µm ground step lands
+  at the via↔taper junction rather than inside the via. Fix = a hand-rolled
+  via: BOT_METAL grounds at bespoke pitch, TOP_METAL grounds at PDK pitch,
+  Via1/Via2 hole array in the ~188 µm overlap. Explicitly requested and
+  repeatedly deferred.
+- **PCM heater** (`pcm_bondpad_1x2`) is a standalone `heater_cr` under the pad
+  pair — **not electrically wired** to the pads yet.
+- **Spiral** (`test_spiral_sm`) is standalone — not routed to the edge coupler.
+- **DC de-embed cells**: user cut the open-DC pair (EO devices, no junction →
+  little value); revisit only if an electrode-capacitor / leakage cell is
+  wanted.
+- **R4A / R4B output GSG pads** reportedly spill ~48 µm past the die west edge
+  (from the original handoff) — verify / fix.
+- Overlaps chased only for the PCM block + spiral (all zero); broader overlap
+  sweep not done.
+
+## 6. First step in the new chat
+
+```
+cd /Users/philippe/Github/sonyx_2026 \
+  && uv run python -m sonyx.artifacts \
+  && uv run ruff check src/sonyx \
+  && uv run ty check src/sonyx
+```
+
+Confirm green (expect only the 3 known `die_r1a.py` ruff errors), then continue
+— likely starting with the **R3B split-gap via**.

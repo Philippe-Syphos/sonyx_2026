@@ -29,11 +29,16 @@ def add_head_and_couplers(
     cell: fw.Component,
     second_input_head: bool = False,
     extra_input_spacing: float = 0.0,
+    input_anchor: tuple[float, float] | None = None,
 ) -> None:
     """Add the modulator_head + directional-coupler test block to ``cell``.
 
-    ``cell`` must already carry the RF launch pads ``rf_pads_bot_in`` (input,
-    east) and ``rf_pads_bot_out`` / ``rf_pads_top_out`` (outputs, west). Adds:
+    The output DCs anchor to ``gsg_modulator_bot`` / ``gsg_modulator_top``
+    (``.e1``). The input block anchors to ``input_anchor`` if given, else to
+    the east edge of the lower input GSG pad group ``rf_pads_bot_in`` (``.e2``)
+    -- so explicit-chain dies can omit it, while dies using the wrapped RF
+    launch (R1A, which has no ``rf_pads_bot_in``) pass the launch east edge in.
+    Adds:
 
     - ``test_modulator_head`` (dual-bias) with, right below it, either a
       ``test_directional_coupler`` (default) or a second dual-bias
@@ -43,15 +48,21 @@ def add_head_and_couplers(
       each modulator, by its output pad.
 
     Args:
-        cell: die cell carrying the RF launch pads, extended in place.
+        cell: die cell carrying the modulators (and, unless ``input_anchor`` is
+            given, the ``rf_pads_bot_in`` launch pads), extended in place.
         second_input_head: place a second modulator_head below the first
             (instead of a directional coupler) at the input.
         extra_input_spacing: extra vertical gap (um) added below the first head
             before the second head / DC, on top of the default spacing.
+        input_anchor: ``(x, y)`` of the input pad's outer (east) edge to anchor
+            the head block to. Defaults to ``rf_pads_bot_in.ports.e2.position``.
     """
     # Input: a modulator_head, then below it either a second head or a directional
     # coupler, right-aligned to the input pad's east edge (module constants above).
-    anchor_x, anchor_y = cell.instances["rf_pads_bot_in"].ports.e2.position
+    if input_anchor is None:
+        anchor_x, anchor_y = cell.instances["rf_pads_bot_in"].ports.e2.position
+    else:
+        anchor_x, anchor_y = input_anchor
     right = anchor_x + _HEAD_SHIFT_X
     head = pdk.cells["modulator_head_rib_sm_800nm_ord"](second_bias_tops=True)
     hb = head.bbox
