@@ -58,6 +58,7 @@ _PCM_GAP = 200.0
 _SPIRAL_TEST_LENGTH = 50000.0
 _SPIRAL_N_LOOPS = 8
 _SPIRAL_GAP = 100.0
+_SPIRAL_VERTICAL_SHIFT = 100.0  # raise the spiral off the bottom keep-out edge
 
 
 def die_scaffold(
@@ -177,7 +178,7 @@ def die_scaffold(
             spiral,
             "test_spiral_sm",
             x=((left_x + arr_bb.dx) + _SPIRAL_GAP) - sp_bb.xmin,
-            y=(-half_h + _p.keepout_width.value) - sp_bb.ymin,
+            y=(-half_h + _p.keepout_width.value + _SPIRAL_VERTICAL_SHIFT) - sp_bb.ymin,
         )
 
     # Bond-pad array (TOP_METAL) in the lower-right corner: horizontal row tiled

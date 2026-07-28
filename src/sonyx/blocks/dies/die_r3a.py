@@ -8,16 +8,30 @@ from __future__ import annotations
 
 import picasso as fw
 from luqia_ln200 import pdk
+from luqia_ln200.cells.couplers import gratingcoupler_alignment_rib_sm_800nm_ext
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
 from ._head_coupler_block import add_head_and_couplers
+from .test_cells_die_r1a import (
+    imbricated_ull_offset,
+    test_waveguide_cutback_sm,
+    test_waveguide_cutback_ull,
+)
 
 # Gap (um) between the input directional coupler and the modulator heads to its
 # right, and the extra head-to-head spacing on this die.
 _INPUT_DC_GAP = 230.0
 _EXTRA_HEAD_SPACING = 100.0
+# Gap (um) from the die right inner edge to the (rightmost) ULL cutback cell.
+_CUTBACK_RIGHT_MARGIN = 250.0
+# SM cutback interleave vs the ULL cutback: horizontal shift toward the ULL, and
+# the vertical spiral offset -- realised as *extra SM coupler-to-spiral spacing*
+# (not a placement drop) so the two grating arrays stay on one line while the SM
+# spirals sit lower to interleave.
+_SM_CUTBACK_INTERLEAVE_X = 1000.0
+_SM_CUTBACK_INTERLEAVE_Y = 110.0
 
 
 def die_r3a() -> fw.Component:
@@ -138,6 +152,53 @@ def die_r3a() -> fw.Component:
         "test_input_dc",
         x=(in_x - _INPUT_DC_GAP) - sb.xmax,
         y=((mid1 + mid2) / 2.0) - sb.center_y,
+    )
+    # SM + ULL waveguide-loss (cutback) test cells (moved here from R1A): each a
+    # horizontal coupler array on top of a vertical stack of four horizontal delay
+    # spirals (long/thin at 10-12 loops, so each stack is only ~1.4-1.5 mm tall).
+    # The ULL cell (reversed length order -> longest at top) is placed x-flipped
+    # (mirror + 180 deg: spirals extend left, alignment loop on the right) and the
+    # SM cell (upright) nests to its left so the two triangular spiral profiles
+    # imbricate -- shortest-SM facing longest-ULL. The pair sits in the clear top
+    # band and is pushed to the **right** of the die (ULL, the rightmost, held
+    # _CUTBACK_RIGHT_MARGIN off the right inner edge). The SM is then nudged
+    # +1000 um toward the ULL and -110 um down to interleave further (a small
+    # residual SM<->ULL overlap is accepted for now).
+    left_inner = -_p.die_width.value / 2.0 + _p.keepout_width.value
+    right_inner = _p.die_width.value / 2.0 - _p.keepout_width.value
+    top_inner = half_h - _p.keepout_width.value
+    # Corner alignment-loop height, from the Component bbox (ty-clean; Instance
+    # bbox is BBox | None). The scaffold lands the loop's top at top_inner.
+    corner_loop_dy = gratingcoupler_alignment_rib_sm_800nm_ext().bbox.dy
+    # The SM cell carries extra coupler-to-spiral spacing so its (raised) grating
+    # array lands on the same line as the ULL's while its spirals interleave below.
+    sm_cut = test_waveguide_cutback_sm(extra_coupler_gap=_SM_CUTBACK_INTERLEAVE_Y)
+    ull_cut = test_waveguide_cutback_ull()
+    dx, _dy = imbricated_ull_offset(sm_cut, ull_cut)
+    # Shared grating-array line (both cells' coupler tops land here).
+    y_couplers = top_inner - corner_loop_dy - 30.0 + 100.0
+    # Base SM x-anchor (upright, top-left of the band); ULL nests at +dx.
+    x_sm = (left_inner + 70.0 + 250.0) - sm_cut.bbox.xmin
+    # (1) Shift the whole pair right so the x-flipped ULL's right edge (its
+    # rightmost point is -ull.bbox.xmin from its anchor) sits _CUTBACK_RIGHT_MARGIN
+    # off the right inner edge.
+    ull_right = (x_sm + dx) - ull_cut.bbox.xmin
+    block_dx = (right_inner - _CUTBACK_RIGHT_MARGIN) - ull_right
+    # SM shifted +_SM_CUTBACK_INTERLEAVE_X toward the ULL; both coupler arrays
+    # anchored (bbox top) to the shared y_couplers line.
+    cell.add_placed(
+        sm_cut,
+        "test_waveguide_cutback_sm",
+        x=x_sm + block_dx + _SM_CUTBACK_INTERLEAVE_X,
+        y=y_couplers - sm_cut.bbox.ymax,
+    )
+    cell.add_placed(
+        ull_cut,
+        "test_waveguide_cutback_ull",
+        x=x_sm + dx + block_dx,
+        y=y_couplers - ull_cut.bbox.ymax,
+        mirror=True,
+        rotation=180.0,
     )
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".

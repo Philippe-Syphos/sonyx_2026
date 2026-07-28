@@ -11,6 +11,9 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParametersMultimode
 from ...parameters import parameters as _p
+from ..heater_mzi_sweep import add_heater_mzi_sweep
+from ..mzi_ladder import add_mzi_ladder
+from ..paperclip_mzi_sweep import add_paperclip_mzi_sweep
 from ._frame import die_scaffold
 from ._head_coupler_block import add_head_and_couplers
 
@@ -118,6 +121,17 @@ def die_r4b() -> fw.Component:
     # --- R4·B per-die content ---
     # modulator_head + directional couplers test block (shared with R4A).
     add_head_and_couplers(cell)
+    # Unbalanced-MZI n_eff / n_g calibration ladder (ord + ext, 6 MZIs) across
+    # the clear top band, with two constant-pitch N-S grating-coupler arrays
+    # (one per orientation group). Placement only -- not routed yet.
+    add_mzi_ladder(cell)
+    # Thermo-optic phase-shifter test: 6 balanced 1x2-MMI MZIs with a swept
+    # heater active length (top-left GC array + alignment loop, MZIs stacked
+    # below). Placement only.
+    add_heater_mzi_sweep(cell)
+    # Paperclip-TOPS test: 3 MZIs (num_arms 3/5/7) with a folded thermo-optic
+    # phase shifter on one arm, L-bend risers, right of the heater_cr block.
+    add_paperclip_mzi_sweep(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

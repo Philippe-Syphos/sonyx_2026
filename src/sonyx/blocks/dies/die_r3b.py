@@ -16,7 +16,7 @@ import picasso as fw
 from luqia_ln200 import pdk
 from luqia_ln200.cells.dc import via_top_bot_holes
 from luqia_ln200.cells.modulators import _cover_modulator_with_moat  # shared moat draw
-from luqia_ln200.cells.rf import _build_gsg_via  # shared GSG via builder (bespoke bot_xs)
+from luqia_ln200.cells.rf import _build_gsg_split_via  # split-gap GSG via (BOT bespoke, TOP PDK)
 from luqia_ln200.tech.cross_sections import cross_sections as _xs
 from luqia_ln200.tech.cross_sections import gsg_electrode
 from luqia_ln200.tech.layers import layers as _layers
@@ -27,6 +27,11 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
 from ._head_coupler_block import add_head_and_couplers
+from .test_cells_die_r1a import test_waveguide_cutback_ssm
+
+# SSM cutback: gaps (um) from the die inner edges to the (right-pushed) cell.
+_SSM_CUTBACK_RIGHT_MARGIN = 250.0
+_SSM_CUTBACK_TOP_MARGIN = 40.0
 
 # Extra head-to-head spacing (um) on this die (mirrors R3A).
 _EXTRA_HEAD_SPACING = 100.0
@@ -81,23 +86,25 @@ def _bespoke_gap_modulator(length: float, gap: float) -> fw.Component:
 
 
 def _bespoke_via(gap: float) -> fw.Component:
-    """Bespoke GSG electrode via: BOT_METAL at the widened ``gap``, TOP at PDK gap.
+    """Split-gap GSG electrode via: BOT_METAL at the widened ``gap``, TOP at PDK gap.
 
-    Reuses the PDK GSG via builder with a bespoke ``bot_xs`` (the widened-gap
-    electrode) and the stock ``gsg_electrode_top_metal_50ohms`` ``top_xs``. The
-    <1 um ground-edge step lands at the via's top edge; the hole-array contact
-    spans the ~188 um ground overlap, so the transition is electrically
-    transparent. Downstream the stock taper mates the TOP (PDK) geometry.
+    A *true* split-gap via (:func:`_build_gsg_split_via`): the BOT_METAL grounds
+    are drawn at the bespoke (widened) ``gap`` to match the modulator electrode,
+    the TOP_METAL grounds physically at the PDK ``gsg_gap`` to match the
+    downstream stock taper, and the Via1/Via2 hole array bridges the sub-µm to
+    ~1 µm ground step **inside** the via contact (in the ~188 µm ground
+    y-overlap). The stock ``gsg_taper_electrode_to_pads_top_metal_50ohms`` then
+    abuts the real TOP (PDK) geometry on ``top_e1`` / ``top_e2``.
     """
     bot_xs = gsg_electrode(
         signal=_pdk.gsg_signal_width.value, ground=_pdk.gsg_ground_width.value,
         gap=gap, layer=_layers.BOT_METAL, name=f"gsg_electrode_bot_metal_gap{gap:g}",
     )
-    return _build_gsg_via(
+    return _build_gsg_split_via(
         bot_xs=bot_xs,
         top_xs=_xs.gsg_electrode_top_metal_50ohms,
         length=_pdk.bondpad_width.value,
-        description=f"bespoke GSG electrode via (BOT gap {gap:g} um, TOP PDK gap)",
+        description=f"split-gap GSG electrode via (BOT gap {gap:g} um, TOP PDK gap)",
         stamp=via_top_bot_holes,
     )
 
@@ -197,6 +204,22 @@ def die_r3b() -> fw.Component:
     # with two modulator_heads at the input. Unlike R3A, no input directional
     # coupler next to the heads on this die.
     add_head_and_couplers(cell, second_input_head=True, extra_input_spacing=_EXTRA_HEAD_SPACING)
+    # SSM (super-single-mode) waveguide-loss cutback, in the clear top band on the
+    # RIGHT of the die (moved here from R3A, whose top band was too narrow). Upright
+    # (couplers/alignment loop on the left, spirals extending right), pushed right
+    # (its right edge _SSM_CUTBACK_RIGHT_MARGIN off the right inner edge) with its
+    # coupler tops _SSM_CUTBACK_TOP_MARGIN below the top inner edge. Inverted in y
+    # (built reverse=True: longest spiral at the top, shortest at the bottom).
+    right_inner = _p.die_width.value / 2.0 - _p.keepout_width.value
+    top_inner = _p.die_height.value / 2.0 - _p.keepout_width.value
+    ssm_cut = test_waveguide_cutback_ssm()
+    sc = ssm_cut.bbox
+    cell.add_placed(
+        ssm_cut,
+        "test_waveguide_cutback_ssm",
+        x=(right_inner - _SSM_CUTBACK_RIGHT_MARGIN) - sc.xmax,
+        y=(top_inner - _SSM_CUTBACK_TOP_MARGIN) - sc.ymax,
+    )
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

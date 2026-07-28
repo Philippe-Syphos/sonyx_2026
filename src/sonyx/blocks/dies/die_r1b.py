@@ -11,8 +11,9 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..gc_test_array import add_open_gc_array
 from ._frame import die_scaffold
-from ._head_coupler_block import add_head_and_couplers
+from ._head_coupler_block import add_head_and_couplers, add_top_head_and_coupler
 
 
 def die_r1b() -> fw.Component:
@@ -164,6 +165,12 @@ def die_r1b() -> fw.Component:
     # each of the lower two modulators (west) -- the shared head+coupler block,
     # same as R4A (default anchor on rf_pads_bot_in).
     add_head_and_couplers(cell)
+    # Open grating-coupler array (4 couplers) + left alignment loop, top-right --
+    # unrouted fibre I/O for the extra top modulator (gsg_modulator_top_2).
+    add_open_gc_array(cell, num=4, prefix="mod_top2_gc")
+    # modulator_head (left) + output directional coupler (right) for the extra top
+    # modulator, rotated 180 deg vs the standard block, in the band above it.
+    add_top_head_and_coupler(cell, "gsg_modulator_top_2")
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

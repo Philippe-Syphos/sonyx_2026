@@ -73,7 +73,9 @@ def _ring_element(gap: float) -> fw.Component:
     grating-coupler fibre alignment. The assembled element is rotated 90 deg.
     """
     inner = fw.Component()
-    gc_out = inner.add_placed(pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), "gc_out", x=0.0, y=0.0)
+    gc_out = inner.add_placed(
+        pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), "gc_out", x=0.0, y=0.0
+    )
     gc_in = inner.add_placed(
         pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), "gc_in", x=0.0, y=_FIBER_PITCH
     )
@@ -83,7 +85,9 @@ def _ring_element(gap: float) -> fw.Component:
         pdk.cells["lbend_rib_sm_800nm_tight"](), gc_in.ports.o1, port_to="o1", name="bend_in"
     )
     ring = inner.put(
-        pdk.cells["ringresonator_allpass_rib_sm_800nm"](radius=_RING_RADIUS, gap=gap, bus_length=bus_len),
+        pdk.cells["ringresonator_allpass_rib_sm_800nm"](
+            radius=_RING_RADIUS, gap=gap, bus_length=bus_len
+        ),
         bend_in.ports.o2, port_to="o1", name="ring", mirror=True,
     )
     bend_out = inner.put(

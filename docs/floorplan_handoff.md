@@ -33,9 +33,9 @@ Continue building the **sonyx_2026** photonic reticle (2×4 die grid) using the
   - The **PDK repo is not ruff/ty-clean at baseline**; only add no *new*
     errors. Baseline `rf.py` = 15 ruff errors; `cells/__init__.py` has 2
     pre-existing E501.
-  - **Known pre-existing sonyx ruff** (leave them): 3 in `die_r1a.py` (F401
-    `test_waveguide_cutback_sm/_ull`, F841 `half_w`) from a commented-out
-    cutback block.
+  - **`src/sonyx` is now fully ruff-clean (0 errors)** — the 3 former
+    `die_r1a.py` errors are gone (the commented-out cutback block was removed
+    when the SM cutback moved to R3A).
 - **Uncommitted** — commit only when asked; branch off `main` first.
 - Multi-die shared content: make each cell a `@recipe` (cached, shared across
   dies like PDK cells) and place with a plain helper — a plain wrapper
@@ -51,7 +51,8 @@ Continue building the **sonyx_2026** photonic reticle (2×4 die grid) using the
   **1250 µm** (row-1). Has head + input-DC + two output-DCs (via
   `add_head_and_couplers(input_anchor=...)`; R1A uses the wrapped launch so it
   passes the launch east edge). Bondpads horizontal (`bondpad_rotation=0.0`).
-  Cutback test block still commented out.
+  Cutback test block **removed** (SM cutback moved to R3A; the dead commented
+  block + its imports/`half_w` are gone).
 - **R1B** — now **SM** (`DieParameters`, was multimode), bondpads **vertical**
   (default rotation), 3 modulators (added `gsg_modulator_top_2` with a full
   explicit via→taper→pads chain), shift 1250, head + couplers (R4A-style
@@ -65,11 +66,33 @@ Continue building the **sonyx_2026** photonic reticle (2×4 die grid) using the
 - **R3B** — **bespoke widened-gap electrodes** (the "safe" die). Two inline SM
   modulators via local `_bespoke_gap_modulator(length, gap)`: top gap =
   `gsg_gap + 0.5` (6.0 µm), bottom gap = `gsg_gap + 1.0` (6.5 µm), pinned to
-  the live PDK `gsg_gap`. Bespoke via via local `_bespoke_via(gap)` =
-  `_build_gsg_via(bot_xs=bespoke, top_xs=gsg_electrode_top_metal_50ohms)`. Two
-  input heads (no input DC) + output DCs.
+  the live PDK `gsg_gap`. **True split-gap via** via local `_bespoke_via(gap)`
+  = `_build_gsg_split_via(bot_xs=bespoke, top_xs=gsg_electrode_top_metal_50ohms)`
+  (new PDK builder): BOT_METAL grounds physically at the bespoke pitch,
+  TOP_METAL grounds at the PDK pitch, Via1/Via2 hole array bridging the ground
+  step inside the via overlap. Two input heads (no input DC) + output DCs.
 - **R4A / R4B** — 2 mods, head + couplers. R4B is the **only multimode** die
-  now (`DieParametersMultimode`).
+  now (`DieParametersMultimode`). R4B also carries the **unbalanced-MZI n_eff /
+  n_g calibration ladder** (`blocks/mzi_ladder.py`, `add_mzi_ladder`): the
+  A/B/C ΔL ladder (27.5 / 55 / 275 µm) in **both** orientations —
+  `unbalanced_mzi_rib_sm_800nm_{ord,ext}`, 6 MZIs — as **two close vertical
+  columns pushed to the top-right** of the die (block x≈3516–4938, 400 µm off
+  the right inner edge; `_BLOCK_RIGHT_MARGIN`). Each column stacks its three
+  rungs A(top)→C(bottom), both A rungs top-anchored. Ord rungs pack to a
+  **20 µm bbox-to-bbox** gap (`_ORD_STACK_GAP`); ext rungs at the `_ROW_PITCH`
+  **440 µm** centre pitch and **staggered `_EXT_STAGGER` 50 µm in x per rung**
+  (staircase). The two columns sit **`_COL_GAP` 500 µm apart** bbox-to-bbox
+  (ord x≈3615–4001, ext x≈4501–4999), all clear of the modulators (≤778).
+  Block right edge at x≈5088 (`_BLOCK_RIGHT_MARGIN` 250 µm off the right inner
+  edge, clearing the `gc_align_tr` corner loop by ~82 µm). Fibre I/O = **two
+  constant-pitch grating-coupler arrays** (`gratingcoupler_rib_sm_800nm_ext`,
+  N-S input-from-north, 6 each at `grating_coupling_pitch_for_tests` 127 µm) on
+  **one common line** at y≈2500 (ord x≈3470–4146, ext x≈4412–5088, ~266 µm
+  apart — no horizontal overlap),
+  each with a fibre-alignment loop (`gratingcoupler_alignment_rib_sm_800nm_ext`)
+  one pitch to its left (`mzi_gc_align_ord`/`_ext`). **Placement only — MZI
+  ports not routed yet.** (Note: the ext array's left align loop clears the ord
+  array by only ~12 µm — widen `_COL_GAP` if more room is wanted.)
 - Rows 2–4 modulator shift = 2 mm default; row 1 = 1250 µm local.
 
 **PCM & calibration block** (`src/sonyx/blocks/pcm.py`, `docs/pcm_cells.md`):
@@ -105,23 +128,34 @@ rightmost circuit edge coupler, inside the bottom keepout.
 - `cells/rf.py`: **`gsg_short_top_metal_50ohms(length=40)`** — solid low-R
   TOP_METAL bar shorting signal↔grounds; port `e1` on
   `gsg_pads_top_metal_50ohms`.
+- `cells/rf.py`: **`_build_gsg_split_via(bot_xs, top_xs, length, description,
+  stamp=via_top_bot_holes)`** — split-gap GSG via builder. Signal congruent on
+  both layers; each ground drawn as a full solid rectangle on its own layer at
+  its own pitch (BOT at `bot_xs`, TOP at `top_xs`), with the Via1/Via2 hole
+  array placed only in the ground y-overlap (inset inside both, rules
+  30.3/31.3). Reduces to the congruent `_build_gsg_via` when the pitches match.
+  Used by R3B's `_bespoke_via`.
 
 ## 5. Open items / pending
 
-- **R3B bespoke via — top-metal fix (HIGHEST PRIORITY, promised but not
-  done).** The user wants bottom metal at the bespoke (widened) gap and **top
-  metal physically at the PDK gap**, with the via hole-array bridging the
-  sub-µm ground offset (a "true split-gap via"). The current
-  `_build_gsg_via(bot=bespoke, top=PDK)` draws top & bottom metal
-  **congruently at the bespoke pitch** (the PDK via stamp is congruent) and
-  only advertises PDK geometry on the top port — so the ≤1 µm ground step lands
-  at the via↔taper junction rather than inside the via. Fix = a hand-rolled
-  via: BOT_METAL grounds at bespoke pitch, TOP_METAL grounds at PDK pitch,
-  Via1/Via2 hole array in the ~188 µm overlap. Explicitly requested and
-  repeatedly deferred.
+- ✅ **R3B split-gap via — DONE.** BOT_METAL grounds at the bespoke (widened)
+  pitch, TOP_METAL grounds physically at the PDK pitch, Via1/Via2 hole array
+  (121–133 holes) bridging the 0.5–1.0 µm ground step inside the ~188 µm
+  overlap. New PDK builder `_build_gsg_split_via` (cells/rf.py); R3B's
+  `_bespoke_via` now calls it. Geometry verified numerically (BOT ground centre
+  ±118.74/±118.24, TOP ±117.74; cuts inset ≥2.5 µm inside both metals). The
+  stock `gsg_taper_electrode_to_pads_top_metal_50ohms` now abuts the real
+  PDK-pitch TOP metal on `top_e1`/`top_e2`.
 - **PCM heater** (`pcm_bondpad_1x2`) is a standalone `heater_cr` under the pad
   pair — **not electrically wired** to the pads yet.
 - **Spiral** (`test_spiral_sm`) is standalone — not routed to the edge coupler.
+- **R4B MZI ladder** (`add_mzi_ladder`) is **placement only** — each MZI's
+  `o1`/`o2` optical ports are not yet routed to its column's grating-coupler
+  array (`o1_r0_cN` ports) or the alignment loop. Next: wire GC→MZI→GC per rung
+  (ord MZIs are E-W, ext are N-S). Array pitch = `grating_coupling_pitch_for_tests`;
+  `_COL_X` (column separation) and `_ROW_PITCH` (vertical rung spacing) in
+  `mzi_ladder.py` are placeholders. Each 6-coupler array is narrower than its
+  column is tall — routing will fan out; revisit spacings when wiring.
 - **DC de-embed cells**: user cut the open-DC pair (EO devices, no junction →
   little value); revisit only if an electrode-capacitor / leakage cell is
   wanted.
@@ -140,4 +174,6 @@ cd /Users/philippe/Github/sonyx_2026 \
 ```
 
 Confirm green (expect only the 3 known `die_r1a.py` ruff errors), then continue
-— likely starting with the **R3B split-gap via**.
+— the R3B split-gap via is done; next candidates are wiring the **PCM heater**
+to its pads, routing the **loss spiral** to its edge coupler, or verifying the
+**R4A/R4B output GSG pad** west-edge spill.

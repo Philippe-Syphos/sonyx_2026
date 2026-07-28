@@ -11,12 +11,11 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..gc_test_array import add_open_gc_array
+from ..gsg_termination_sweep import add_gsg_termination_sweep
+from ..reflectometry import add_reflectometry_cell
 from ._frame import die_scaffold
-from ._head_coupler_block import add_head_and_couplers
-from .test_cells_die_r1a import test_waveguide_cutback_sm, test_waveguide_cutback_ull
-
-# Horizontal gap between the SM and ULL cutback test cells (um).
-_CUTBACK_GAP = 200.0
+from ._head_coupler_block import add_head_and_couplers, add_top_head_and_coupler
 
 
 def die_r1a() -> fw.Component:
@@ -27,7 +26,6 @@ def die_r1a() -> fw.Component:
     # bottom one gsg_modulator_vertical_shift above the die bottom edge, top one
     # gsg_modulator_spacing (centre-to-centre) above it. Placed directly so their
     # ports (o1-o4 optical, e1/e2 electrode) are reachable for per-die routing.
-    half_w = _p.die_width.value / 2.0
     half_h = _p.die_height.value / 2.0
     modulator = pdk.cells[params.gsg_modulator_cell.value](
         length=_p.gsg_modulator_electrode_length.value,
@@ -79,24 +77,20 @@ def die_r1a() -> fw.Component:
     launch_east_from_e1 = launch.bbox.xmax - launch.ports["e1"].position[0]
     pad_east_x = mod_bot.ports.e2.position[0] + launch_east_from_e1
     add_head_and_couplers(cell, input_anchor=(pad_east_x, mod_bot.ports.e1.position[1]))
-    # # Test-cell section, top-left corner: SM waveguide-loss (cutback) structure.
-    # # Sits flush inside the top-left keep-out corner (top region is otherwise
-    # # free -- label is bottom-left, modulators / RF are lower-centre).
-    # top_inner = half_h - _p.keepout_width.value
-    # cutback = test_waveguide_cutback_sm()
-    # cb_bb = cutback.bbox
-    # sm_x = -half_w + _p.keepout_width.value - cb_bb.xmin
-    # cell.add_placed(cutback, "test_waveguide_cutback_sm", x=sm_x, y=top_inner - cb_bb.ymax)
-    # # ULL-spiral twin just to the right of the SM cutback, tops aligned.
-    # ull = test_waveguide_cutback_ull()
-    # ull_bb = ull.bbox
-    # sm_right = sm_x + cb_bb.xmax
-    # cell.add_placed(
-    #     ull,
-    #     "test_waveguide_cutback_ull",
-    #     x=(sm_right + _CUTBACK_GAP) - ull_bb.xmin,
-    #     y=top_inner - ull_bb.ymax,
-    # )
+    # Open grating-coupler array (4 couplers) + left alignment loop, top-right --
+    # unrouted fibre I/O for the extra top modulator (gsg_modulator_top_2).
+    add_open_gc_array(cell, num=4, prefix="mod_top2_gc")
+    # modulator_head (left) + output directional coupler (right) for the extra top
+    # modulator, rotated 180 deg vs the standard block, in the band above it.
+    add_top_head_and_coupler(cell, "gsg_modulator_top_2")
+    # GSG termination-resistance sweep (7 probeable lumped-terminator DUTs,
+    # 25-75 ohm + nominal 50 ohm) in a single row along the top-left edge.
+    add_gsg_termination_sweep(cell)
+    # Reflectometry cell -- first pass: 4 grating couplers (left alignment loop +
+    # 2 open) below the terminators. Reflector/delay path added later.
+    add_reflectometry_cell(cell)
+    # (The SM waveguide-loss cutback test cell moved to R3A -- see die_r3a. The
+    # ULL twin recipe, test_waveguide_cutback_ull, is still available if wanted.)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

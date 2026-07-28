@@ -1,0 +1,300 @@
+"""Thermo-optic phase-shifter test — balanced MZIs with a swept heater length.
+
+A set of **balanced** Mach-Zehnder interferometers (arm imbalance dL = 0), each
+carrying a Cr ladder heater (:func:`luqia_ln200.cells.dc.heater_cr`) of a
+*different active length* on the top arm and a length-matched plain waveguide on
+the bottom. With dL = 0 the only interferometric phase comes from the heater, so
+sweeping the heater length across the set and measuring each MZI's transfer vs.
+drive power maps the thermo-optic phase shifter: the short-heater P_pi rolloff /
+plateau, the thermal time constant (~proportional to length), and -- since the
+ladder resistance R scales with the section count -- the V_pi = sqrt(P_pi*R)
+drive point (V_pi ~ sqrt(L) at ~fixed thermal efficiency).
+
+Length is swept via the ladder's series-section count ``sections`` (M): active
+length ~proportional to M*N_p and R ~proportional to M/N_p, so with N_p fixed,
+``M`` walks the active length (and R rises with it). All M are **even** so both
+heater terminals land on the north band, away from the bottom arm.
+
+Each device (built purely from PDK cells via ``put()``):
+
+    mmi_1x2 (split) -> wide S-bend splay -> heated arm (top) / matched plain WG
+    (bottom) -> wide S-bend splay-back -> mmi_1x2 (combine)
+
+Fibre I/O is a single constant-pitch N-S grating-coupler array
+(``gratingcoupler_rib_sm_800nm_ext``, input from the north) + a fibre-alignment
+loop, in the die's top-left corner -- same convention as the other test cells.
+The MZIs stack vertically below the array. Placement-only: the MZI optical ports
+are not routed to the couplers, and the heater terminals are not routed to pads.
+"""
+
+from __future__ import annotations
+
+import picasso as fw
+from luqia_ln200.cells.bends import sbend_rib_sm_800nm_wide
+from luqia_ln200.cells.couplers import (
+    gratingcoupler_alignment_rib_sm_800nm_ext,
+    gratingcoupler_rib_sm_800nm_ext,
+)
+from luqia_ln200.cells.dc import bondpad_for_test_top, heater_cr
+from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord
+from luqia_ln200.cells.waveguides import straight_rib_sm_800nm
+from picasso.leaves import make_array
+from picasso.recipe import recipe
+
+from ..parameters import parameters as _p
+
+# Heater length map: ladder series-section counts M (even -> both terminals
+# north). Active length ~proportional to M*N_p, R ~proportional to M/N_p; with
+# the default N_p=5 these give active ~92..568 um and R ~42..250 ohm.
+_HEATER_SECTIONS: tuple[int, ...] = (4, 8, 12, 16, 20, 24)
+
+# One input + one output grating coupler per MZI.
+_GC_PER_MZI = 2
+_NUM_MZI = len(_HEATER_SECTIONS)
+
+# Gaps (um) from the die inner edges (past the 50 um keepout) to the GC array:
+# the alignment loop's left edge sits _LEFT_MARGIN off the left inner edge, and
+# the coupler/loop tops sit _TOP_MARGIN below the top inner edge.
+_LEFT_MARGIN = 250.0
+_TOP_MARGIN = 40.0
+
+# MZI columns (below the GC array). The couplers + MZIs split into two
+# routing groups: a left group (left loop + first coupler half + first MZI half)
+# and a right group (mid loop + second coupler half + second MZI half), so each
+# MZI half routes locally up to its own coupler half. The right group is pushed
+# _RIGHT_BLOCK_GAP beyond the pitch-continuous position to separate the two.
+_RIGHT_BLOCK_GAP = 150.0  # extra x-separation of the right group from the left
+# Top MZI axis (both columns) below the top inner edge; deep enough to leave
+# routing room between the coupler line and the MZIs.
+_MZI_TOP_DROP = 400.0
+_MZI_ROW_PITCH = 120.0  # vertical centre-to-centre of stacked MZIs (~76 um tall)
+
+# DC heater-bias test bond pads: a row of _NUM_DC_PADS TOP_METAL-only test pads
+# (bondpad_for_test_top, 400 x 200 um -- the heater terminals are already on
+# routing_top_metal, so no via at the pad). Rotated 90 deg so the long side runs
+# N-S (200 um E-W x 400 um N-S). Pitch = pad width + parameters.dc_test_pad_spacing.
+# The row centreline is parameters.dc_test_pad_row_y (shared with the other test
+# cells); the first pad's left edge aligns with the left MZI column (_LEFT_MARGIN
+# off the left inner edge).
+_NUM_DC_PADS = 8
+
+
+@recipe
+def _heated_arm(sections: int) -> fw.Component:
+    """One MZI arm: a rib WG straight with a Cr ladder heater of ``sections`` M over it.
+
+    The heater's active length sets the WG length (so the whole arm is heated),
+    matching :func:`luqia_ln200.cells.modulators.tops_rib_sm_800nm` but with the
+    ladder ``sections`` exposed for the length sweep. Ports: ``o1``/``o2`` (WG,
+    west/east) and ``e1``/``e2`` (heater terminals, north-facing axial).
+    """
+    heater = heater_cr(sections=sections)
+    active = heater.parameters.active_length_um.value
+    wg = straight_rib_sm_800nm(length=active)
+    arm = fw.Component()
+    wg_inst = arm.add_placed(wg, "wg")
+    heater_inst = arm.add_placed(heater, "heater", x=0.0, y=0.0)
+    arm.add_port("o1", (wg_inst.name, "o1"))
+    arm.add_port("o2", (wg_inst.name, "o2"))
+    arm.add_port("e1", (heater_inst.name, "e1"))
+    arm.add_port("e2", (heater_inst.name, "e2"))
+    arm.cell_type = "phase_shifter"
+    arm.parameters.heater_sections = sections
+    arm.parameters.heater_active_length_um = active
+    arm.parameters.heater_resistance_ohm = heater.parameters.resistance_ohm.value
+    return arm
+
+
+@recipe
+def _balanced_mzi_tops(sections: int) -> fw.Component:
+    """Balanced 1x2-MMI MZI with a ``sections``-M ladder heater on the top arm.
+
+    Two ``mmi_1x2_rib_sm_800nm_ord`` splitters back-to-back; the outputs are
+    fanned apart by a wide S-bend per arm (top up, bottom down) so the heater
+    clears the lower arm, then fanned back for the combiner. The top arm is a
+    :func:`_heated_arm` (WG + heater); the bottom arm is a plain WG of the
+    **same length**, so the interferometer is balanced (dL = 0) and all phase
+    comes from the heater. Ports: ``o1`` (input, west) / ``o2`` (output, east) /
+    ``e1``/``e2`` (heater terminals). Built via ``put()`` -- every abutment a Net.
+    """
+    mmi_in = mmi_1x2_rib_sm_800nm_ord()
+    mmi_out = mmi_1x2_rib_sm_800nm_ord()
+    sbw = sbend_rib_sm_800nm_wide()
+    top = _heated_arm(sections)
+    active = top.parameters.heater_active_length_um.value
+    bot = straight_rib_sm_800nm(length=active)  # matched -> balanced
+
+    cell = fw.Component()
+    mi = cell.add_placed(mmi_in, "mmi_in")
+    # Fan the two MMI outputs apart: top (o2) up, bottom (o3) down (mirrored).
+    su = cell.put(sbw, (mi.name, "o2"), port_to="o1", name="splay_up")
+    sd = cell.put(sbw, (mi.name, "o3"), port_to="o1", name="splay_dn", mirror=True)
+    # Arms (equal optical length).
+    ta = cell.put(top, (su.name, "o2"), port_to="o1", name="top_arm")
+    ba = cell.put(bot, (sd.name, "o2"), port_to="o1", name="bot_arm")
+    # Fan back to the MMI output pitch (mirror flags reversed vs the splay).
+    fu = cell.put(sbw, (ta.name, "o2"), port_to="o1", name="fan_up", mirror=True)
+    fd = cell.put(sbw, (ba.name, "o2"), port_to="o1", name="fan_dn")
+    # Combiner MMI: mate its o3 to the top return; record the bottom join as a Net.
+    mo = cell.put(mmi_out, (fu.name, "o2"), port_to="o3", name="mmi_out")
+    cell.connect((fd.name, "o2"), (mo.name, "o2"))
+
+    cell.add_port("o1", (mi.name, "o1"))
+    cell.add_port("o2", (mo.name, "o1"))
+    cell.add_port("e1", (ta.name, "e1"))
+    cell.add_port("e2", (ta.name, "e2"))
+    cell.cell_type = "mzi"
+    cell.description = (
+        "Balanced 1x2-MMI Mach-Zehnder on the 800 nm SM rib (ord-axis) with a "
+        f"Cr ladder heater (sections M={sections}) on the top arm -- thermo-optic "
+        "phase-shifter length-sweep test cell."
+    )
+    cell.calibration_status = "PLACEHOLDER"
+    cell.parameters.band = "800nm"
+    cell.parameters.axis = "ord"
+    cell.parameters.mechanism = "thermo_optic"
+    cell.parameters.length_imbalance_um = 0.0
+    cell.parameters.heater_sections = sections
+    cell.parameters.heater_active_length_um = active
+    cell.parameters.heater_resistance_ohm = top.parameters.heater_resistance_ohm.value
+    return cell
+
+
+@recipe
+def _gc_line(num: int) -> fw.Component:
+    """A row of ``num`` N-S grating couplers at ``grating_coupling_pitch_for_tests``.
+
+    ``gratingcoupler_rib_sm_800nm_ext`` (fibre input from the north), tiled with
+    :func:`picasso.leaves.make_array`. Array ports: ``o1_r0_cN``.
+    """
+    return make_array(
+        template=gratingcoupler_rib_sm_800nm_ext(),
+        rows=1,
+        cols=num,
+        dx=_p.grating_coupling_pitch_for_tests.value,
+        dy=0.0,
+    )
+
+
+def _gc_group_left_edges() -> tuple[float, float]:
+    """Left-edge x of the left and right coupler/MZI groups.
+
+    The left group's left edge (the far-left alignment loop) sits ``_LEFT_MARGIN``
+    off the left inner edge. The right group (mid loop + second coupler half)
+    would continue the constant pitch immediately after the left half; it is
+    instead pushed a further ``_RIGHT_BLOCK_GAP`` right to separate the two
+    routing groups. Both the couplers and the MZI columns anchor to these.
+    """
+    half_w = _p.die_width.value / 2.0
+    kw = _p.keepout_width.value
+    pitch = _p.grating_coupling_pitch_for_tests.value
+    gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
+    gap = pitch - gc_w  # keeps adjacent GC centres one pitch apart within a group
+    loop_dx = gratingcoupler_alignment_rib_sm_800nm_ext().bbox.dx
+    line_l_dx = _gc_line((_GC_PER_MZI * _NUM_MZI) // 2).bbox.dx
+
+    left_x = (-half_w + kw) + _LEFT_MARGIN
+    right_x = left_x + (loop_dx + gap) + (line_l_dx + gap) + _RIGHT_BLOCK_GAP
+    return left_x, right_x
+
+
+def _add_gc_array(cell: fw.Component) -> None:
+    """Place the sweep's GC array + alignment loops, top-left of the die.
+
+    ``_GC_PER_MZI * _NUM_MZI`` N-S grating couplers split into two equal halves,
+    each a constant-pitch group led by a fibre-alignment loop (the loop is two
+    couplers wide, so it occupies two pitch slots): a left group (far-left loop +
+    first half) and a right group (mid loop + second half). Within each group the
+    ``grating_coupling_pitch`` grid is continuous; the right group is offset
+    ``_RIGHT_BLOCK_GAP`` further right (see :func:`_gc_group_left_edges`). All
+    coupler/loop tops sit ``_TOP_MARGIN`` below the top inner edge.
+
+    Instances: ``heater_mzi_gc_align_l`` / ``heater_mzi_gc_align_mid`` (loops)
+    and ``heater_mzi_gc_array_l`` / ``heater_mzi_gc_array_r`` (the two coupler
+    halves, ports ``o1_r0_cN``, left open for later routing to the MZIs).
+    """
+    half_h = _p.die_height.value / 2.0
+    kw = _p.keepout_width.value
+    pitch = _p.grating_coupling_pitch_for_tests.value
+    gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
+    gap = pitch - gc_w
+    y_top = (half_h - kw) - _TOP_MARGIN
+
+    n_total = _GC_PER_MZI * _NUM_MZI
+    n_left = n_total // 2
+    line_l = _gc_line(n_left)
+    line_r = _gc_line(n_total - n_left)
+    loop = gratingcoupler_alignment_rib_sm_800nm_ext()
+    left_x, right_x = _gc_group_left_edges()
+
+    def place(sub: fw.Component, name: str, x_left: float) -> None:
+        b = sub.bbox
+        cell.add_placed(sub, name, x=x_left - b.xmin, y=y_top - b.ymax)
+
+    # Left group: far-left loop, then couplers 1..n_left one pitch onward.
+    place(loop, "heater_mzi_gc_align_l", left_x)
+    place(line_l, "heater_mzi_gc_array_l", left_x + loop.bbox.dx + gap)
+    # Right group: mid loop (offset by _RIGHT_BLOCK_GAP), then couplers n_left+1..n_total.
+    place(loop, "heater_mzi_gc_align_mid", right_x)
+    place(line_r, "heater_mzi_gc_array_r", right_x + loop.bbox.dx + gap)
+
+
+def _add_devices(cell: fw.Component) -> None:
+    """Place the balanced-MZI heater sweep as two columns below the GC array.
+
+    The MZIs split into two columns matching the coupler halves: the first
+    ``_NUM_MZI // 2`` (shorter heaters) form the left column under the left
+    coupler group, the rest the right column under the right coupler group. Each
+    column stacks downward at ``_MZI_ROW_PITCH`` from the same top axis, its
+    inputs aligned to its group's left edge (see :func:`_gc_group_left_edges`).
+    Instances ``heater_mzi_M{M}``; placement-only.
+    """
+    half_h = _p.die_height.value / 2.0
+    kw = _p.keepout_width.value
+    y_axis0 = (half_h - kw) - _MZI_TOP_DROP
+    left_x, right_x = _gc_group_left_edges()
+
+    split = _NUM_MZI // 2
+    columns = ((left_x, _HEATER_SECTIONS[:split]), (right_x, _HEATER_SECTIONS[split:]))
+    for x_in, sections in columns:
+        for i, m in enumerate(sections):
+            mzi = _balanced_mzi_tops(m)
+            # o1 (input) sits at local (0, 0); place it directly at (x_in, y_axis).
+            cell.add_placed(mzi, f"heater_mzi_M{m}", x=x_in, y=y_axis0 - i * _MZI_ROW_PITCH)
+
+
+def _add_dc_pads(cell: fw.Component) -> None:
+    """Place a row of ``_NUM_DC_PADS`` TOP_METAL DC test bond pads below the array.
+
+    ``bondpad_for_test_top`` (400 x 200 um, TOP_METAL only) rotated 90 deg (long
+    side N-S -> 200 um E-W x 400 um N-S) and tiled at pad width +
+    ``dc_test_pad_spacing``, the row centreline at ``parameters.dc_test_pad_row_y``
+    (shared with the other test cells). The first pad's left edge aligns with the
+    left MZI column (``_LEFT_MARGIN`` off the left inner edge). Instances
+    ``dc_pad_{i}``; placement-only (heater terminals not yet routed to them).
+    """
+    half_w = _p.die_width.value / 2.0
+    kw = _p.keepout_width.value
+    y_row_c = _p.dc_test_pad_row_y.value
+
+    pad = bondpad_for_test_top()
+    # Rotated 90 deg, so the E-W width is the pad's original y-extent.
+    pad_w_rot = pad.bbox.dy
+    pitch = pad_w_rot + _p.dc_test_pad_spacing.value  # edge-to-edge gap from the layout param
+    x_center0 = ((-half_w + kw) + _LEFT_MARGIN) + pad_w_rot / 2.0  # first pad's left edge at margin
+    for i in range(_NUM_DC_PADS):
+        cell.add_placed(
+            pad, f"dc_pad_{i + 1}", x=x_center0 + i * pitch, y=y_row_c, rotation=90.0
+        )
+
+
+def add_heater_mzi_sweep(cell: fw.Component) -> None:
+    """Place the thermo-optic phase-shifter length sweep, top-left of the die.
+
+    The top-left GC array + alignment loops, the ``_NUM_MZI`` balanced 1x2-MMI
+    MZIs (two columns) with swept heater length, and a row of DC heater-bias test
+    bond pads below them. Placement-only -- nothing is routed.
+    """
+    _add_gc_array(cell)
+    _add_devices(cell)
+    _add_dc_pads(cell)

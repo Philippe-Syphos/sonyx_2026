@@ -153,6 +153,25 @@ class Parameters(ParametersBase):
             "of the die edge. PLACEHOLDER."
         ),
     )
+    dc_test_pad_spacing = ParameterField(
+        200.0,
+        units="um",
+        description=(
+            "Edge-to-edge gap between adjacent DC test bond pads in a "
+            "test-structure pad row (e.g. the heater-bias pads on R4B). The row "
+            "pitch is the pad width plus this spacing. Distinct from the PDK's "
+            "bondpad_pitch (the die wirebond array's centre-to-centre pitch)."
+        ),
+    )
+    dc_test_pad_row_y = ParameterField(
+        1242.0,
+        units="um",
+        description=(
+            "Y centreline of the DC test bond-pad rows, shared across test cells "
+            "so their pad rows line up on one horizontal (e.g. the heater and "
+            "paperclip MZI blocks on R4B). Absolute die coordinate."
+        ),
+    )
     gsg_modulator_spacing = ParameterField(
         1000.0,
         units="um",

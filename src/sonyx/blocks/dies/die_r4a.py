@@ -11,6 +11,8 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..dc_length_sweep import add_dc_length_sweep
+from ..dc_mzi_length_sweep import add_dc_mzi_length_sweep
 from ._frame import die_scaffold
 from ._head_coupler_block import add_head_and_couplers
 
@@ -118,6 +120,12 @@ def die_r4a() -> fw.Component:
     # --- R4·A per-die content ---
     # modulator_head + directional couplers test block (shared with R4B).
     add_head_and_couplers(cell)
+    # Directional-coupler coupling-length test: 8 DCs (L sweep) + GC array,
+    # top-left. Placement-only (o1/o3/o4 -> couplers, o2 open; routed later).
+    add_dc_length_sweep(cell)
+    # Back-to-back-coupler MZI (zero-arm) coupling-length test: same sweep/layout,
+    # placed to the right of the single-DC sweep. Placement-only.
+    add_dc_mzi_length_sweep(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

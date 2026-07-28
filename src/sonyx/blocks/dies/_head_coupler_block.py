@@ -24,6 +24,47 @@ _HEAD_DC_SPACING = 60.0  # um, vertical gap between the head and the DC below it
 _OUT_DC_SHIFT_X = -20.0
 _OUT_DC_SHIFT_Y = 300.0
 
+# Vertical gap (um) above an extra top modulator for its rotated head + DC block.
+_TOP2_GAP = 60.0
+
+
+def add_top_head_and_coupler(cell: fw.Component, mod_name: str = "gsg_modulator_top_2") -> None:
+    """Add a modulator_head + output directional coupler for an extra top modulator.
+
+    The standard :func:`add_head_and_couplers` puts the modulator_head near the
+    (east) input pads and the output DC at the modulator's (west) output. This is
+    the **180 deg-rotated** version for a top-edge modulator (``mod_name``): the
+    ``modulator_head`` (rotated 180) lands on the **left**, in the clear band
+    ``_TOP2_GAP`` **above** the modulator; the output ``directional coupler``
+    (rotated 180) lands on the **right**, ``_TOP2_GAP`` **below** the modulator
+    (the opposite side from the head). Placement only -- not routed to the
+    modulator's optical ports. Instances: ``test_modulator_head_top2`` and
+    ``test_dc_out_top2``.
+    """
+    m = cell.instances[mod_name]
+    mb = m.bbox
+    assert mb is not None  # placed modulator always has geometry
+    west_x = m.ports.o1.position[0]  # modulator west end
+    east_x = m.ports.o3.position[0]  # modulator east end
+    # Head (rotated 180) on the left, its bottom _TOP2_GAP above the modulator top.
+    # rotation=180 maps local (x, y) -> (X - x, Y - y).
+    head = pdk.cells["modulator_head_rib_sm_800nm_ord"](second_bias_tops=True)
+    hb = head.bbox
+    head_bottom = mb.ymax + _TOP2_GAP
+    cell.add_placed(
+        head, "test_modulator_head_top2",
+        x=west_x + hb.xmax, y=head_bottom + hb.ymax, rotation=180.0,
+    )
+    # Output directional coupler (rotated 180) on the right, its top _TOP2_GAP
+    # below the modulator bottom (the opposite side from the head).
+    dc = pdk.cells["directionalcoupler_rib_sm_800nm_ord_50_50"]()
+    db = dc.bbox
+    dc_top = mb.ymin - _TOP2_GAP
+    cell.add_placed(
+        dc, "test_dc_out_top2",
+        x=east_x + db.xmin, y=dc_top + db.ymin, rotation=180.0,
+    )
+
 
 def add_head_and_couplers(
     cell: fw.Component,

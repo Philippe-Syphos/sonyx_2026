@@ -11,6 +11,7 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..racetrack_sweep import add_racetrack_sweep
 from ._frame import die_scaffold
 from ._head_coupler_block import add_head_and_couplers
 
@@ -114,6 +115,9 @@ def die_r2a() -> fw.Component:
     # --- R2·A per-die content ---
     # modulator_head + directional couplers test block (shared with R3A/R4A/R4B).
     add_head_and_couplers(cell)
+    # Variable-length racetrack resonator sweep (5 x L_s, fixed bend point coupler)
+    # for propagation + bend loss extraction, top band. Placement only.
+    add_racetrack_sweep(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell
