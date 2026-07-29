@@ -26,7 +26,12 @@ from picasso.leaves import make_straight
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
-from ._head_coupler_block import add_head_and_couplers
+from ._head_coupler_block import (
+    add_head_and_couplers,
+    add_head_input_routes,
+    add_mzm_input_routes,
+    add_mzm_output_routes,
+)
 from .test_cells_die_r1a import test_waveguide_cutback_ssm
 
 # SSM cutback: gaps (um) from the die inner edges to the (right-pushed) cell.
@@ -206,6 +211,16 @@ def die_r3b() -> fw.Component:
     # with two modulator_heads at the input. Unlike R3A, no input directional
     # coupler next to the heads on this die.
     add_head_and_couplers(cell, second_input_head=True, extra_input_spacing=_EXTRA_HEAD_SPACING)
+    # Feed the two input modulator heads (the second is a tunable coupler, in place
+    # of the common dies' directional coupler) from the two next-rightmost circuit
+    # edge couplers (single bundle, default non-tight SM routing).
+    add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value),
+                          second_device="test_modulator_head_2")
+    # Route the two heads' outputs to the two MZMs (upper head -> top modulator,
+    # lower head -> bottom modulator), a single 4-lane bundle to the east ports.
+    add_mzm_input_routes(cell, second_device="test_modulator_head_2")
+    # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
+    add_mzm_output_routes(cell)
     # SSM (super-single-mode) waveguide-loss cutback, in the clear top band on the
     # RIGHT of the die (moved here from R3A, whose top band was too narrow). Upright
     # (couplers/alignment loop on the left, spirals extending right), pushed right

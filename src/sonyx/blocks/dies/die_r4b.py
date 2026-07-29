@@ -15,7 +15,12 @@ from ..heater_mzi_sweep import add_heater_mzi_sweep
 from ..mzi_ladder import add_mzi_ladder
 from ..paperclip_mzi_sweep import add_paperclip_mzi_sweep
 from ._frame import die_scaffold
-from ._head_coupler_block import add_head_and_couplers
+from ._head_coupler_block import (
+    add_head_and_couplers,
+    add_head_input_routes,
+    add_mzm_input_routes,
+    add_mzm_output_routes,
+)
 
 
 def die_r4b() -> fw.Component:
@@ -121,6 +126,13 @@ def die_r4b() -> fw.Component:
     # --- R4·B per-die content ---
     # modulator_head + directional couplers test block (shared with R4A).
     add_head_and_couplers(cell)
+    # Feed the input block's head + directional coupler from the two next-rightmost
+    # circuit edge couplers (default, non-tight SM routing).
+    add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
+    add_mzm_input_routes(cell)
+    # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
+    add_mzm_output_routes(cell)
     # Unbalanced-MZI n_eff / n_g calibration ladder (ord + ext, 6 MZIs) across
     # the clear top band, with two constant-pitch N-S grating-coupler arrays
     # (one per orientation group). Placement only -- not routed yet.

@@ -13,7 +13,13 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..gc_test_array import add_open_gc_array
 from ._frame import die_scaffold
-from ._head_coupler_block import add_head_and_couplers, add_top_head_and_coupler
+from ._head_coupler_block import (
+    add_head_and_couplers,
+    add_head_input_routes,
+    add_mzm_input_routes,
+    add_mzm_output_routes,
+    add_top_head_and_coupler,
+)
 
 
 def die_r1b() -> fw.Component:
@@ -165,6 +171,14 @@ def die_r1b() -> fw.Component:
     # each of the lower two modulators (west) -- the shared head+coupler block,
     # same as R4A (default anchor on rf_pads_bot_in).
     add_head_and_couplers(cell)
+    # Feed the input block's head + directional coupler from the two next-rightmost
+    # circuit edge couplers (default, non-tight SM routing).
+    add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
+    # The third modulator (gsg_modulator_top_2) has its own head and is not fed here.
+    add_mzm_input_routes(cell)
+    # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
+    add_mzm_output_routes(cell)
     # Open grating-coupler array (4 couplers) + left alignment loop, top-right --
     # unrouted fibre I/O for the extra top modulator (gsg_modulator_top_2).
     add_open_gc_array(cell, num=4, prefix="mod_top2_gc")

@@ -23,6 +23,7 @@ from luqia_ln200.cells.bends import cbend_rib_sm_800nm_127um
 from luqia_ln200.cells.couplers import gratingcoupler_alignment_rib_sm_800nm_ext
 from luqia_ln200.cells.dc import bonding_pad
 from luqia_ln200.cells.waveguides import spiral_rib_sm_800nm_for_length
+from picasso.component import PortSpec
 from picasso.geometry.ops import rectangle
 from picasso.leaves import make_label
 
@@ -180,6 +181,26 @@ def die_scaffold(
             x=((left_x + arr_bb.dx) + _SPIRAL_GAP) - sp_bb.xmin,
             y=(-half_h + _p.keepout_width.value + _SPIRAL_VERTICAL_SHIFT) - sp_bb.ymin,
         )
+        # Feed the spiral (a 2-port line, both ports west-facing at its west edge)
+        # from the two rightmost circuit edge couplers (north-facing, just west of
+        # the spiral). Bundle autoroute: the rightmost EC -> spiral o1 (lower port),
+        # the next EC left -> spiral o2 (upper port), so the two risers/horizontals
+        # don't cross and both routes stay west of the spiral body (no obstacles).
+        if num >= 2:
+            ec_ports: list[PortSpec] = [
+                ("edge_couplers_circuit", f"o2_r0_c{num - 1}"),
+                ("edge_couplers_circuit", f"o2_r0_c{num - 2}"),
+            ]
+            spiral_ports: list[PortSpec] = [
+                ("test_spiral_sm", "o1"),
+                ("test_spiral_sm", "o2"),
+            ]
+            cell.autoroute(
+                ports_a=ec_ports,
+                ports_b=spiral_ports,
+                spec="routing_sm_tight",
+                strategy="vgraph_rect",
+            )
 
     # Bond-pad array (TOP_METAL) in the lower-right corner: horizontal row tiled
     # with make_array. Rightmost pad clears the right keep-out band plus

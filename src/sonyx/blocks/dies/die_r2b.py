@@ -12,6 +12,12 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
+from ._head_coupler_block import (
+    add_head_and_couplers,
+    add_head_input_routes,
+    add_mzm_input_routes,
+    add_mzm_output_routes,
+)
 from .test_cells_die_r1a import place_cutback_top_right, test_waveguide_cutback_sm
 
 
@@ -116,6 +122,15 @@ def die_r2b() -> fw.Component:
         name="rf_pads_top_out",
     )
     # --- R2·B per-die content (see module docstring for planned DUTs) ---
+    # modulator_head + directional-coupler test block, identical to R4A's input
+    # setup, fed from the two next-rightmost circuit edge couplers (default,
+    # non-tight SM routing).
+    add_head_and_couplers(cell)
+    add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
+    add_mzm_input_routes(cell)
+    # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
+    add_mzm_output_routes(cell)
     # SM waveguide-loss (cutback) test cell (moved here from R3A), placed in the
     # standard cutback slot (x-flipped, top-right band) -- same relative position
     # and orientation as the ULL cutback on R3A.

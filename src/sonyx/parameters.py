@@ -227,12 +227,15 @@ class DieParameters(ParametersBase):
     """
 
     num_edge_couplers_circuit = ParameterField(
-        8,
+        10,
         units="",
         description=(
             "Number of edge couplers in this die's circuit-side edge-coupler "
             "array (lower-left corner, pitch = edge_coupling_pitch_for_circuits). "
-            "PLACEHOLDER default; override per die."
+            "Allocation (see _frame.die_scaffold): c0/c1 = alignment loopback, the "
+            "two rightmost feed the spiral and the next two the input block; the "
+            "remaining middle couplers (between the loop and the routed ones) are "
+            "left open. PLACEHOLDER default; override per die."
         ),
     )
     num_bondpads = ParameterField(

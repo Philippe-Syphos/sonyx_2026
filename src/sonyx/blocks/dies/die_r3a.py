@@ -8,13 +8,18 @@ from __future__ import annotations
 
 import picasso as fw
 from luqia_ln200 import pdk
+from picasso.component import PortSpec
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..crossing_mzi import add_crossing_mzis
 from ..thermal_crosstalk import add_thermal_crosstalk
 from ._frame import die_scaffold
-from ._head_coupler_block import add_head_and_couplers
+from ._head_coupler_block import (
+    add_head_and_couplers,
+    add_mzm_input_routes,
+    add_mzm_output_routes,
+)
 from .test_cells_die_r1a import place_cutback_top_right, test_waveguide_cutback_ull
 
 # Gap (um) between the input directional coupler and the modulator heads to its
@@ -142,6 +147,40 @@ def die_r3a() -> fw.Component:
         x=(in_x - _INPUT_DC_GAP) - sb.xmax,
         y=((mid1 + mid2) / 2.0) - sb.center_y,
     )
+    # Edge-coupled input into the two heads via the input DC, in two single bundles
+    # (lanes stay parallel / non-crossing), default (non-tight) SM routing:
+    #   (1) the two next-rightmost circuit edge couplers -> the DC's west inputs
+    #       (c_{num-4} west -> o2 upper, c_{num-3} east -> o1 lower);
+    #   (2) the DC's east outputs -> one west input of each head (o3 upper -> upper
+    #       head, o4 lower -> lower head, each to that head's nearer input port).
+    num_ec = int(params.num_edge_couplers_circuit.value)
+    ec_in: list[PortSpec] = [
+        ("edge_couplers_circuit", f"o2_r0_c{num_ec - 4}"),
+        ("edge_couplers_circuit", f"o2_r0_c{num_ec - 3}"),
+    ]
+    dc_in: list[PortSpec] = [("test_input_dc", "o2"), ("test_input_dc", "o1")]
+    cell.autoroute(ports_a=ec_in, ports_b=dc_in, spec="routing_sm_default", strategy="vgraph_rect")
+    # DC outputs -> heads: two scalar routes, not a bundle. The upper output goes to
+    # the upper head and the lower output to the lower head, so the two paths diverge
+    # (they cannot cross) -- and their DC-side pitch (~21 um) vs head-side pitch
+    # (~248 um) is too divergent over the ~230 um gap for a bundle fan corridor.
+    cell.autoroute(
+        ("test_input_dc", "o3"),
+        ("test_modulator_head", "o1"),
+        spec="routing_sm_default",
+        strategy="vgraph_rect",
+    )
+    cell.autoroute(
+        ("test_input_dc", "o4"),
+        ("test_modulator_head_2", "o2"),
+        spec="routing_sm_default",
+        strategy="vgraph_rect",
+    )
+    # Route the two heads' outputs to the two MZMs (upper head -> top modulator,
+    # lower head -> bottom modulator), a single 4-lane bundle to the east ports.
+    add_mzm_input_routes(cell, second_device="test_modulator_head_2")
+    # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
+    add_mzm_output_routes(cell)
     # ULL waveguide-loss (cutback) test cell: a horizontal coupler array on top of
     # a vertical stack of four horizontal delay spirals. Placed in the standard
     # cutback slot (x-flipped, top-right band). The SM twin now lives on R2B in the

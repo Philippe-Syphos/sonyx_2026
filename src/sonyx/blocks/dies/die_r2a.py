@@ -14,7 +14,12 @@ from ...parameters import parameters as _p
 from ..crossing_cutback import add_crossing_cutbacks
 from ..racetrack_sweep import add_racetrack_sweep
 from ._frame import die_scaffold
-from ._head_coupler_block import add_head_and_couplers
+from ._head_coupler_block import (
+    add_head_and_couplers,
+    add_head_input_routes,
+    add_mzm_input_routes,
+    add_mzm_output_routes,
+)
 
 
 def die_r2a() -> fw.Component:
@@ -26,16 +31,11 @@ def die_r2a() -> fw.Component:
     # gsg_modulator_spacing (centre-to-centre) above it. Placed directly so their
     # ports (o1-o4 optical, e1/e2 electrode) are reachable for per-die routing.
     half_h = _p.die_height.value / 2.0
-    # R2A terminates the output instead of taper + GSG pads; lengthen the
-    # electrode by exactly the output length that removal frees, so the device
-    # spans the same as the standard (taper + pad) dies.
-    freed = (
-        pdk.cells["gsg_taper_electrode_to_pads_top_metal_50ohms"]().bbox.dx
-        + pdk.cells["gsg_bondpads_top_metal_50ohms"]().bbox.dx
-        - pdk.cells["gsg_terminator_top_metal_50ohms_parallel"]().bbox.dx
-    )
+    # R2A terminates the output (instead of taper + GSG pads). The electrode uses
+    # the standard gsg_modulator_electrode_length, matching every other die -- so
+    # the device is shorter than the taper+pad dies by what the terminator saves.
     modulator = pdk.cells[params.gsg_modulator_cell.value](
-        length=_p.gsg_modulator_electrode_length.value + freed,
+        length=_p.gsg_modulator_electrode_length.value,
     )
     mb = modulator.bbox
     # Centre the electrode in x, then shift both electrodes 220 um to the left.
@@ -116,6 +116,13 @@ def die_r2a() -> fw.Component:
     # --- R2·A per-die content ---
     # modulator_head + directional couplers test block (shared with R3A/R4A/R4B).
     add_head_and_couplers(cell)
+    # Feed the input block's head + directional coupler from the two next-rightmost
+    # circuit edge couplers (default, non-tight SM routing).
+    add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
+    add_mzm_input_routes(cell)
+    # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
+    add_mzm_output_routes(cell)
     # Variable-length racetrack resonator sweep (5 x L_s, fixed bend point coupler)
     # for propagation + bend loss extraction, top band. Placement only.
     add_racetrack_sweep(cell)
