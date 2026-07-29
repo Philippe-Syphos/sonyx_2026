@@ -25,6 +25,7 @@ from luqia_ln200.cells.couplers import (
 from luqia_ln200.cells.dc import bondpad_for_test_top, heater_cr
 from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord
 from luqia_ln200.cells.waveguides import straight_rib_sm_800nm
+from picasso.component import PortSpec
 from picasso.leaves import make_array
 from picasso.recipe import recipe
 
@@ -35,7 +36,7 @@ _MZI_ARM = 150.0  # each MZI arm length (um) -- longer = more phase per delta-T
 _MZI_GAP = 0.0  # gap between stacked MZI bboxes (touching); the moat isolates them optically
 _HEATER_SECTIONS = 10  # Cr ladder heater (~235 um active, ~100 ohm) -- the source
 _HEATER_GAP = 45.0  # gap from the bottom MZI to the heater below it
-_GC_ROW_GAP = 120.0  # gap from the GC array to the heater
+_GC_ROW_GAP = 250.0  # gap from the GC array to the heater
 _MZI_X_OFFSET = 250.0  # MZI left edge right of the alignment loop (routing room)
 
 # Placement on R3A: to the right of the crossing-MZI blocks, top band.
@@ -146,3 +147,39 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
             y=_p.dc_test_pad_row_y.value,
             rotation=90.0,
         )
+
+    # Autoroute the 5 leftmost GCs to the MZI left inputs as a single bundle
+    # (tight routing spec, vgraph_rect default). No obstacle set: the routes run
+    # down the left channel into the west-facing o1 ports and never cross the MZI
+    # bodies (which extend east). A whole-layer WG_RIB obstacle set would be the
+    # entire die (~2300 polygons, slow) and would also wall off the target ports.
+    gc_ports: list[PortSpec] = [("thermal_gc_array", f"o1_r0_c{i}") for i in range(_NUM_MZI)]
+    mzi_ports: list[PortSpec] = [(f"thermal_mzi_{i}", "o1") for i in range(_NUM_MZI)]
+    cell.autoroute(
+        ports_b=gc_ports,
+        ports_a=mzi_ports,
+        spec="routing_sm_tight",
+        # avoid_port_owners=True,
+        name="thermal_routes",
+        strategy="grid_astar",
+        step=10.0
+    )
+
+    # Autoroute the MZI outputs (east-facing o2) to the 5 rightmost GCs as a
+    # second bundle. The routes exit east, clear of the MZI stack (bodies extend
+    # east but the o2 ports are their eastmost points), then run north up the
+    # right channel into the couplers. Same tight spec / no obstacle set as the
+    # input bundle.
+    gc_out_ports: list[PortSpec] = [
+        ("thermal_gc_array", f"o1_r0_c{_NUM_MZI + i}") for i in range(_NUM_MZI)
+    ]
+    mzi_out_ports: list[PortSpec] = [(f"thermal_mzi_{i}", "o2") for i in range(_NUM_MZI)]
+    cell.autoroute(
+        ports_b=gc_out_ports,
+        ports_a=mzi_out_ports,
+        spec="routing_sm_tight",
+        name="thermal_routes_out",
+        strategy="grid_astar",
+        step=10.0,
+        fan_out=True
+    )
