@@ -100,7 +100,9 @@ def _build_cutback(
         length_cm = _SPIRAL_MIN_CM + idx * span_cm / (_SPIRAL_N - 1)
         spiral = spiral_factory(target_length=length_cm * 10000.0, n_loops=spiral_n_loops)
         sb = spiral.bbox
-        cell.add_placed(spiral, f"spiral_{idx}", x=_SPIRAL_X_OFFSET - sb.xmin, y=y_cursor - sb.ymax)
+        cell.add_placed(
+            spiral, name=f"spiral_{idx}", x=_SPIRAL_X_OFFSET - sb.xmin, y=y_cursor - sb.ymax
+        )
         y_cursor -= sb.dy + _SPIRAL_STACK_GAP
 
     # Grating-coupler array (horizontal row, facet south) on top of the stack.
@@ -115,7 +117,7 @@ def _build_cutback(
     # stay put), so the couplers-to-spirals spacing widens without moving spirals.
     coupler_gap = _COUPLER_ROW_GAP + extra_coupler_gap
     ab = arr.bbox
-    cell.add_placed(arr, "couplers", x=-ab.xmin, y=coupler_gap - ab.ymin)
+    cell.add_placed(arr, name="couplers", x=-ab.xmin, y=coupler_gap - ab.ymin)
     # The placed array's left edge is at x=0, top at coupler_gap + ab.dy.
 
     # Grating-coupler alignment loop one pitch to the left of the array, GC tops
@@ -125,7 +127,7 @@ def _build_cutback(
     lb = loop.bbox
     cell.add_placed(
         loop,
-        "gc_align",
+        name="gc_align",
         x=-(pitch - gc_w) - lb.xmax,
         y=(coupler_gap + ab.dy) - lb.ymax,
     )
@@ -216,3 +218,36 @@ def imbricated_ull_offset(
         if not (ub[3] + dy <= sb[2] or sb[3] <= ub[2] + dy)  # vertical overlap
     )
     return dx, dy
+
+
+# Standard cutback placement (the ULL-on-R3A convention, now shared by every die
+# that carries a single waveguide-loss cutback): x-flipped in the clear top band
+# (spirals extend left, coupler array + alignment loop on the right), right edge
+# held _CUTBACK_RIGHT_MARGIN off the die right inner edge, coupler tops on the
+# common line one alignment-loop below the top inner edge.
+_CUTBACK_RIGHT_MARGIN = 250.0
+_CUTBACK_COUPLER_LINE = 70.0  # coupler-tops line offset above (top_inner - corner_loop_dy)
+
+
+def place_cutback_top_right(cell: fw.Component, cutback: fw.Component, name: str) -> None:
+    """Place ``cutback`` x-flipped in the top-right band (see the constants above).
+
+    Uniform placement for a die's single waveguide-loss cutback: ``mirror=True,
+    rotation=180`` so the spirals extend left and the coupler array + alignment
+    loop sit on the right, the block's right edge ``_CUTBACK_RIGHT_MARGIN`` off
+    the right inner edge, coupler tops on the shared ``_CUTBACK_COUPLER_LINE``.
+    """
+    half_h = _p.die_height.value / 2.0
+    right_inner = _p.die_width.value / 2.0 - _p.keepout_width.value
+    top_inner = half_h - _p.keepout_width.value
+    corner_loop_dy = gratingcoupler_alignment_rib_sm_800nm_ext().bbox.dy
+    y_couplers = top_inner - corner_loop_dy + _CUTBACK_COUPLER_LINE
+    b = cutback.bbox
+    cell.add_placed(
+        cutback,
+        name=name,
+        x=(right_inner - _CUTBACK_RIGHT_MARGIN) + b.xmin,
+        y=y_couplers - b.ymax,
+        mirror=True,
+        rotation=180.0,
+    )

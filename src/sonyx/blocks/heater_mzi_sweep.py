@@ -92,8 +92,8 @@ def _heated_arm(sections: int) -> fw.Component:
     active = heater.parameters.active_length_um.value
     wg = straight_rib_sm_800nm(length=active)
     arm = fw.Component()
-    wg_inst = arm.add_placed(wg, "wg")
-    heater_inst = arm.add_placed(heater, "heater", x=0.0, y=0.0)
+    wg_inst = arm.add_placed(wg, name="wg")
+    heater_inst = arm.add_placed(heater, name="heater", x=0.0, y=0.0)
     arm.add_port("o1", (wg_inst.name, "o1"))
     arm.add_port("o2", (wg_inst.name, "o2"))
     arm.add_port("e1", (heater_inst.name, "e1"))
@@ -125,7 +125,7 @@ def _balanced_mzi_tops(sections: int) -> fw.Component:
     bot = straight_rib_sm_800nm(length=active)  # matched -> balanced
 
     cell = fw.Component()
-    mi = cell.add_placed(mmi_in, "mmi_in")
+    mi = cell.add_placed(mmi_in, name="mmi_in")
     # Fan the two MMI outputs apart: top (o2) up, bottom (o3) down (mirrored).
     su = cell.put(sbw, (mi.name, "o2"), port_to="o1", name="splay_up")
     sd = cell.put(sbw, (mi.name, "o3"), port_to="o1", name="splay_dn", mirror=True)
@@ -229,7 +229,7 @@ def _add_gc_array(cell: fw.Component) -> None:
 
     def place(sub: fw.Component, name: str, x_left: float) -> None:
         b = sub.bbox
-        cell.add_placed(sub, name, x=x_left - b.xmin, y=y_top - b.ymax)
+        cell.add_placed(sub, name=name, x=x_left - b.xmin, y=y_top - b.ymax)
 
     # Left group: far-left loop, then couplers 1..n_left one pitch onward.
     place(loop, "heater_mzi_gc_align_l", left_x)
@@ -260,7 +260,7 @@ def _add_devices(cell: fw.Component) -> None:
         for i, m in enumerate(sections):
             mzi = _balanced_mzi_tops(m)
             # o1 (input) sits at local (0, 0); place it directly at (x_in, y_axis).
-            cell.add_placed(mzi, f"heater_mzi_M{m}", x=x_in, y=y_axis0 - i * _MZI_ROW_PITCH)
+            cell.add_placed(mzi, name=f"heater_mzi_M{m}", x=x_in, y=y_axis0 - i * _MZI_ROW_PITCH)
 
 
 def _add_dc_pads(cell: fw.Component) -> None:
@@ -284,7 +284,7 @@ def _add_dc_pads(cell: fw.Component) -> None:
     x_center0 = ((-half_w + kw) + _LEFT_MARGIN) + pad_w_rot / 2.0  # first pad's left edge at margin
     for i in range(_NUM_DC_PADS):
         cell.add_placed(
-            pad, f"dc_pad_{i + 1}", x=x_center0 + i * pitch, y=y_row_c, rotation=90.0
+            pad, name=f"dc_pad_{i + 1}", x=x_center0 + i * pitch, y=y_row_c, rotation=90.0
         )
 
 

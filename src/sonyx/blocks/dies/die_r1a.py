@@ -38,14 +38,14 @@ def die_r1a() -> fw.Component:
     _mod_shift = 1250.0
     bot_y = -half_h + _mod_shift - mb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
-    mod_bot = cell.add_placed(modulator, "gsg_modulator_bot", x=x0, y=bot_y)
-    mod_top = cell.add_placed(modulator, "gsg_modulator_top", x=x0, y=top_y)
+    mod_bot = cell.add_placed(modulator, name="gsg_modulator_bot", x=x0, y=bot_y)
+    mod_top = cell.add_placed(modulator, name="gsg_modulator_top", x=x0, y=top_y)
     # One more electrode descending from the top edge: same vertical shift
     # (top-edge inset) as the bottom pair takes from the bottom. Its former
     # mirror-pair partner now lives on R1B -- the two top modulators are split
     # one per die.
     top2_y = half_h - _mod_shift - mb.ymax
-    mod_top_2 = cell.add_placed(modulator, "gsg_modulator_top_2", x=x0, y=top2_y)
+    mod_top_2 = cell.add_placed(modulator, name="gsg_modulator_top_2", x=x0, y=top2_y)
     # RF launch (via -> electrode-to-pads taper -> GSG bondpad triplet, wrapped in
     # one PDK cell) on both electrode ends of every modulator. put() auto-rotates,
     # so the "_in" launch on e2 runs east and the "_out" launch on e1 mirrors and

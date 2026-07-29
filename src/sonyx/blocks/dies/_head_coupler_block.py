@@ -52,7 +52,7 @@ def add_top_head_and_coupler(cell: fw.Component, mod_name: str = "gsg_modulator_
     hb = head.bbox
     head_bottom = mb.ymax + _TOP2_GAP
     cell.add_placed(
-        head, "test_modulator_head_top2",
+        head, name="test_modulator_head_top2",
         x=west_x + hb.xmax, y=head_bottom + hb.ymax, rotation=180.0,
     )
     # Output directional coupler (rotated 180) on the right, its top _TOP2_GAP
@@ -61,7 +61,7 @@ def add_top_head_and_coupler(cell: fw.Component, mod_name: str = "gsg_modulator_
     db = dc.bbox
     dc_top = mb.ymin - _TOP2_GAP
     cell.add_placed(
-        dc, "test_dc_out_top2",
+        dc, name="test_dc_out_top2",
         x=east_x + db.xmin, y=dc_top + db.ymin, rotation=180.0,
     )
 
@@ -108,7 +108,7 @@ def add_head_and_couplers(
     head = pdk.cells["modulator_head_rib_sm_800nm_ord"](second_bias_tops=True)
     hb = head.bbox
     head_y = (anchor_y - _HEAD_SHIFT_Y) - hb.ymax
-    cell.add_placed(head, "test_modulator_head", x=right - hb.xmax, y=head_y)
+    cell.add_placed(head, name="test_modulator_head", x=right - hb.xmax, y=head_y)
     if second_input_head:
         below = pdk.cells["modulator_head_rib_sm_800nm_ord"](second_bias_tops=True)
         below_name = "test_modulator_head_2"
@@ -118,7 +118,7 @@ def add_head_and_couplers(
     bb = below.bbox
     cell.add_placed(
         below,
-        below_name,
+        name=below_name,
         x=right - bb.xmax,
         y=((head_y + hb.ymin) - (_HEAD_DC_SPACING + extra_input_spacing)) - bb.ymax,
     )
@@ -133,7 +133,7 @@ def add_head_and_couplers(
         ax, ay = cell.instances[mod_name].ports.e1.position
         cell.add_placed(
             out_dc,
-            inst_name,
+            name=inst_name,
             x=(ax + _OUT_DC_SHIFT_X) - odb.xmin,
             y=(ay + _OUT_DC_SHIFT_Y) - odb.center_y,
         )

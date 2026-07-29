@@ -64,12 +64,14 @@ def _bespoke_gap_modulator(length: float, gap: float) -> fw.Component:
     # Each rib sits at the centre of a signal-to-ground gap: (signal + gap) / 2.
     rib_y = (signal + gap) / 2.0
     m = fw.Component()
-    electrode = m.add_placed(make_straight(length=length, cross_section=electrode_xs), "electrode")
+    electrode = m.add_placed(
+        make_straight(length=length, cross_section=electrode_xs), name="electrode"
+    )
     rib_top = m.add_placed(
-        make_straight(length=length, cross_section="rib_sm_800nm"), "rib_top", y=+rib_y
+        make_straight(length=length, cross_section="rib_sm_800nm"), name="rib_top", y=+rib_y
     )
     rib_bot = m.add_placed(
-        make_straight(length=length, cross_section="rib_sm_800nm"), "rib_bot", y=-rib_y
+        make_straight(length=length, cross_section="rib_sm_800nm"), name="rib_bot", y=-rib_y
     )
     # One WG_RIB.field moat over the modulator, enclosing the electrode metal by
     # _MOD_MOAT_INCLUSION um on the top/bottom edges (the PDK modulator's own moat
@@ -128,8 +130,8 @@ def die_r3b() -> fw.Component:
     x0 = -mbb.center_x  # centre the electrode in x
     bot_y = -half_h + _p.gsg_modulator_vertical_shift.value - mbb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
-    mod_bot = cell.add_placed(mod_bot_cell, "gsg_modulator_bot", x=x0, y=bot_y)
-    mod_top = cell.add_placed(mod_top_cell, "gsg_modulator_top", x=x0, y=top_y)
+    mod_bot = cell.add_placed(mod_bot_cell, name="gsg_modulator_bot", x=x0, y=bot_y)
+    mod_top = cell.add_placed(mod_top_cell, name="gsg_modulator_top", x=x0, y=top_y)
     # RF launch on both electrode ends: a bespoke via lifts each modulator's
     # (widened-gap) bottom-metal electrode up to top metal at the PDK gap, then
     # the stock width taper matches the electrode bundle to the GSG pad launch,
@@ -216,7 +218,7 @@ def die_r3b() -> fw.Component:
     sc = ssm_cut.bbox
     cell.add_placed(
         ssm_cut,
-        "test_waveguide_cutback_ssm",
+        name="test_waveguide_cutback_ssm",
         x=(right_inner - _SSM_CUTBACK_RIGHT_MARGIN) - sc.xmax,
         y=(top_inner - _SSM_CUTBACK_TOP_MARGIN) - sc.ymax,
     )

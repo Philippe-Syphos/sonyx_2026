@@ -60,10 +60,10 @@ def add_open_gc_array(cell: fw.Component, num: int, prefix: str) -> None:
     arr = _open_gc_line(num)
     ab = arr.bbox
     # Array: right edge at x_right, coupler tops at y_top.
-    cell.add_placed(arr, f"{prefix}_array", x=x_right - ab.xmax, y=y_top - ab.ymax)
+    cell.add_placed(arr, name=f"{prefix}_array", x=x_right - ab.xmax, y=y_top - ab.ymax)
     # Alignment loop one pitch to the left, GC tops on the same line (continuing
     # the array's constant pitch).
     loop = gratingcoupler_alignment_rib_sm_800nm_ext()
     lb = loop.bbox
     target_xmax = (x_right - ab.dx) - (pitch - gc_w)
-    cell.add_placed(loop, f"{prefix}_align", x=target_xmax - lb.xmax, y=y_top - lb.ymax)
+    cell.add_placed(loop, name=f"{prefix}_align", x=target_xmax - lb.xmax, y=y_top - lb.ymax)

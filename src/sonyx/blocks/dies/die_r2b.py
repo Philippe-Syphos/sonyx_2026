@@ -12,6 +12,7 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
+from .test_cells_die_r1a import place_cutback_top_right, test_waveguide_cutback_sm
 
 
 def die_r2b() -> fw.Component:
@@ -30,8 +31,8 @@ def die_r2b() -> fw.Component:
     x0 = -mb.center_x  # centre the electrode in x
     bot_y = -half_h + _p.gsg_modulator_vertical_shift.value - mb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
-    mod_bot = cell.add_placed(modulator, "gsg_modulator_bot", x=x0, y=bot_y)
-    mod_top = cell.add_placed(modulator, "gsg_modulator_top", x=x0, y=top_y)
+    mod_bot = cell.add_placed(modulator, name="gsg_modulator_bot", x=x0, y=bot_y)
+    mod_top = cell.add_placed(modulator, name="gsg_modulator_top", x=x0, y=top_y)
     # RF launch on both electrode ends: a via lifts each modulator's bottom-metal
     # electrode up to top metal, then a width taper matches the electrode bundle to
     # the GSG pad launch, ending on a GSG bondpad triplet. Input (east, e2) and
@@ -115,6 +116,10 @@ def die_r2b() -> fw.Component:
         name="rf_pads_top_out",
     )
     # --- R2·B per-die content (see module docstring for planned DUTs) ---
+    # SM waveguide-loss (cutback) test cell (moved here from R3A), placed in the
+    # standard cutback slot (x-flipped, top-right band) -- same relative position
+    # and orientation as the ULL cutback on R3A.
+    place_cutback_top_right(cell, test_waveguide_cutback_sm(), "test_waveguide_cutback_sm")
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

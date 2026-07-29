@@ -57,7 +57,7 @@ def _termination_dut(target_resistance: float) -> fw.Component:
     line (the pads are landed on directly for a DC probe).
     """
     cell = fw.Component()
-    pads = cell.add_placed(gsg_bondpads_top_metal_50ohms(), "pads")
+    pads = cell.add_placed(gsg_bondpads_top_metal_50ohms(), name="pads")
     # Abut the taper's pad side (e2) on the pads' east port; put() auto-rotates
     # so the electrode side (e1) then faces east for the terminator.
     taper = cell.put(
@@ -105,7 +105,7 @@ def add_gsg_termination_sweep(cell: fw.Component) -> None:
         x_left = x_left0 + idx * _COL_PITCH
         cell.add_placed(
             dut,
-            f"term_dut_{r:g}ohm",
+            name=f"term_dut_{r:g}ohm",
             x=x_left - b.xmin,
             y=y_top0 - b.ymax,
         )

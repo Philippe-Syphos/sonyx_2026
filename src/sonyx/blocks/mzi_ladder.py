@@ -56,7 +56,7 @@ def _place_centered(
 ) -> None:
     """Place ``sub`` into ``cell`` so its bbox centre lands at ``(cx, cy)``."""
     b = sub.bbox
-    cell.add_placed(sub, name, x=cx - b.center_x, y=cy - b.center_y)
+    cell.add_placed(sub, name=name, x=cx - b.center_x, y=cy - b.center_y)
 
 
 @recipe
@@ -92,7 +92,7 @@ def _add_gc_array_with_alignment(
     target_xmax = (center_x - array_dx / 2.0) - (pitch - gc_w)
     target_ymax = y_line + array_dy / 2.0
     cell.add_placed(
-        loop, f"mzi_gc_align_{axis}", x=target_xmax - lb.xmax, y=target_ymax - lb.ymax
+        loop, name=f"mzi_gc_align_{axis}", x=target_xmax - lb.xmax, y=target_ymax - lb.ymax
     )
 
 

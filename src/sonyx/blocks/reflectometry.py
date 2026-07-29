@@ -70,12 +70,12 @@ def add_reflectometry_cell(cell: fw.Component) -> None:
 
     loop = gratingcoupler_alignment_rib_sm_800nm_ext()
     lb = loop.bbox
-    cell.add_placed(loop, "reflecto_gc_align", x=x_left - lb.xmin, y=y_top - lb.ymax)
+    cell.add_placed(loop, name="reflecto_gc_align", x=x_left - lb.xmin, y=y_top - lb.ymax)
 
     arr = _gc_line(_NUM_OPEN_GC)
     ab = arr.bbox
     array_xmin = (x_left + lb.dx) + (pitch - gc_w)
-    cell.add_placed(arr, "reflecto_gc_array", x=array_xmin - ab.xmin, y=y_top - ab.ymax)
+    cell.add_placed(arr, name="reflecto_gc_array", x=array_xmin - ab.xmin, y=y_top - ab.ymax)
 
     # Two 9 mm horizontal waveguides below the couplers: one unterminated
     # (bare open end) and one terminated with a beam dump. Left-aligned with the
@@ -85,12 +85,12 @@ def add_reflectometry_cell(cell: fw.Component) -> None:
     x_wg = x_left + _WG_X_SHIFT
     wg_open = straight_rib_sm_800nm(length=_WG_LENGTH)
     cell.add_placed(
-        wg_open, "reflecto_wg_open",
+        wg_open, name="reflecto_wg_open",
         x=x_wg - wg_open.bbox.xmin, y=y_wg1 - wg_open.bbox.center_y,
     )
     wg_dumped = straight_rib_sm_800nm(length=_WG_LENGTH)
     wd = cell.add_placed(
-        wg_dumped, "reflecto_wg_dumped",
+        wg_dumped, name="reflecto_wg_dumped",
         x=x_wg - wg_dumped.bbox.xmin, y=y_wg2 - wg_dumped.bbox.center_y,
     )
     # Beam dump on the east (far) end -- absorbs the wave (no back-reflection).

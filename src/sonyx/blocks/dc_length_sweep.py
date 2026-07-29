@@ -69,7 +69,7 @@ def _dc_dut(coupling_length: float) -> fw.Component:
         name=f"_dc_len_inner_{coupling_length:g}um",
     )
     cell = fw.Component()
-    di = cell.add_placed(inner, "dc")
+    di = cell.add_placed(inner, name="dc")
     for k in ("o1", "o2", "o3", "o4"):
         cell.add_port(k, (di.name, k))
     cell.cell_type = "directional_coupler"
@@ -123,18 +123,18 @@ def _add_group(
     gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
     loop = gratingcoupler_alignment_rib_sm_800nm_ext()
     lb = loop.bbox
-    cell.add_placed(loop, f"{gc_prefix}_align_{tag}", x=x_left - lb.xmin, y=y_top - lb.ymax)
+    cell.add_placed(loop, name=f"{gc_prefix}_align_{tag}", x=x_left - lb.xmin, y=y_top - lb.ymax)
     arr = _gc_line(_GC_PER_DC * len(lengths))
     ab = arr.bbox
     array_x = (x_left + lb.dx) + (pitch - gc_w) - ab.xmin  # placement offset
-    cell.add_placed(arr, f"{gc_prefix}_array_{tag}", x=array_x, y=y_top - ab.ymax)
+    cell.add_placed(arr, name=f"{gc_prefix}_array_{tag}", x=array_x, y=y_top - ab.ymax)
     array_center_x = array_x + ab.center_x  # GC array horizontal centre
     for i, length in enumerate(lengths):
         dut = dut_factory(length)
         o1 = dut.ports["o1"].position
         b = dut.bbox
         cell.add_placed(
-            dut, f"{dut_prefix}_{length:g}",
+            dut, name=f"{dut_prefix}_{length:g}",
             x=array_center_x - b.center_x, y=(y0 - i * _DC_ROW_PITCH) - o1[1],
         )
 

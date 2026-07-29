@@ -92,11 +92,11 @@ def add_racetrack_sweep(cell: fw.Component) -> None:
     # at x0, coupler tops at y_line.
     loop = gratingcoupler_alignment_rib_sm_800nm_ext()
     lb = loop.bbox
-    cell.add_placed(loop, "racetrack_gc_align", x=x0 - lb.xmin, y=y_line - lb.ymax)
+    cell.add_placed(loop, name="racetrack_gc_align", x=x0 - lb.xmin, y=y_line - lb.ymax)
     arr = _gc_line(_GC_PER_RT * len(_L_S))
     ab = arr.bbox
     array_xmin = (x0 + lb.dx) + (pitch - gc_w)
-    cell.add_placed(arr, "racetrack_gc_array", x=array_xmin - ab.xmin, y=y_line - ab.ymax)
+    cell.add_placed(arr, name="racetrack_gc_array", x=array_xmin - ab.xmin, y=y_line - ab.ymax)
 
     # Racetrack stack directly below the GC row, _GC_GAP beneath the taller element.
     y_stack_top = y_line - max(lb.dy, ab.dy) - _GC_GAP
@@ -109,5 +109,5 @@ def add_racetrack_sweep(cell: fw.Component) -> None:
         b = r.bbox
         y_bottom = y_stack_top - device_h - i * (device_h + _OFFSET)
         cell.add_placed(
-            r, f"racetrack_Ls{length:g}", x=x0 + b.ymax, y=y_bottom, rotation=90.0
+            r, name=f"racetrack_Ls{length:g}", x=x0 + b.ymax, y=y_bottom, rotation=90.0
         )

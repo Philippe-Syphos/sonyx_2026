@@ -95,10 +95,10 @@ def _paperclip_tops(num_arms: int) -> fw.Component:
         num_arms=num_arms,
     )
     cell = fw.Component()
-    pi = cell.add_placed(pc, "pc")
+    pi = cell.add_placed(pc, name="pc")
     bb = pi.bbox
     assert bb is not None
-    hi = cell.add_placed(heater, "heater", x=bb.center_x - hlen / 2.0, y=bb.center_y)
+    hi = cell.add_placed(heater, name="heater", x=bb.center_x - hlen / 2.0, y=bb.center_y)
     cell.add_port("o1", (pi.name, "o1"))
     cell.add_port("o2", (pi.name, "o2"))
     cell.add_port("e1", (hi.name, "e1"))
@@ -133,7 +133,7 @@ def _paperclip_mzi(num_arms: int) -> fw.Component:
     leg = lbend.ports["o2"].position[0]  # 90 deg bend leg (= dx = dy)
 
     cell = fw.Component()
-    mi = cell.add_placed(mmi_1x2_rib_sm_800nm_ord(), "mmi_in")
+    mi = cell.add_placed(mmi_1x2_rib_sm_800nm_ord(), name="mmi_in")
     # Top arm: up-riser -> paperclip -> output straight -> output MMI (mate its
     # o3, so the free port o2 is the LOWER combiner input).
     t1 = cell.put(lbend, (mi.name, "o2"), port_to="o1", name="t_lb1")
@@ -203,11 +203,11 @@ def _add_gc_array(cell: fw.Component, y_top: float) -> float:
     gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
     loop = gratingcoupler_alignment_rib_sm_800nm_ext()
     lb = loop.bbox
-    cell.add_placed(loop, "paperclip_gc_align", x=_INPUT_X - lb.xmin, y=y_top - lb.ymax)
+    cell.add_placed(loop, name="paperclip_gc_align", x=_INPUT_X - lb.xmin, y=y_top - lb.ymax)
     arr = _gc_line(_GC_PER_MZI * len(_NUM_ARMS))
     ab = arr.bbox
     array_xmin = (_INPUT_X + lb.dx) + (pitch - gc_w)
-    cell.add_placed(arr, "paperclip_gc_array", x=array_xmin - ab.xmin, y=y_top - ab.ymax)
+    cell.add_placed(arr, name="paperclip_gc_array", x=array_xmin - ab.xmin, y=y_top - ab.ymax)
     return min(y_top - lb.dy, y_top - ab.dy)
 
 
@@ -227,7 +227,7 @@ def _add_dc_pads(cell: fw.Component) -> None:
     y_c = _p.dc_test_pad_row_y.value
     for i in range(_NUM_DC_PADS):
         cell.add_placed(
-            pad, f"paperclip_dc_pad_{i + 1}",
+            pad, name=f"paperclip_dc_pad_{i + 1}",
             x=(_INPUT_X + pad_w_rot / 2.0) + i * pitch, y=y_c, rotation=90.0,
         )
 
@@ -254,7 +254,7 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
         if y_input0 is None:  # anchor the top device by its top edge
             y_input0 = y_block_top - (b.ymax - o1[1])
         y_input = y_input0 - i * _ROW_PITCH
-        cell.add_placed(mzi, f"paperclip_mzi_N{n}", x=_INPUT_X - o1[0], y=y_input - o1[1])
+        cell.add_placed(mzi, name=f"paperclip_mzi_N{n}", x=_INPUT_X - o1[0], y=y_input - o1[1])
 
     # DC pads on the same row as the heater_cr block's pads (left cells).
     _add_dc_pads(cell)

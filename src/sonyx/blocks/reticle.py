@@ -54,7 +54,7 @@ def reticle() -> fw.Component:
     for j, row in enumerate(DIE_GRID):
         for i, die_builder in enumerate(row):
             die = die_builder()
-            top.add_placed(die, die.name, x=col_x[i], y=row_y[j])
+            top.add_placed(die, name=die.name, x=col_x[i], y=row_y[j])
 
     # --- 150 µm deep-etch dicing street grid (DEEP_ETCH) --------------------
     # Vertical streets: DIE_COLUMNS+1 full-height strips (2 perimeter + inter-

@@ -126,7 +126,7 @@ def die_scaffold(
     label = make_label(text=name, layer=_LABEL_LAYER, magnification=_LABEL_HEIGHT, valign="top")
     cell.add_placed(
         label,
-        "die_id",
+        name="die_id",
         x=-half_w + _LABEL_MARGIN + _p.keepout_width.value,
         y=-half_h + _LABEL_MARGIN + label.bbox.dx / 2.0 + _p.keepout_width.value,
         rotation=90.0
@@ -144,7 +144,7 @@ def die_scaffold(
         facet_y = -half_h - _p.edge_coupler_protrusion.value
         ec_inst = cell.add_placed(
             arr,
-            "edge_couplers_circuit",
+            name="edge_couplers_circuit",
             x=left_x - arr_bb.xmin,
             y=facet_y - arr_bb.ymin,
         )
@@ -164,7 +164,7 @@ def die_scaffold(
             extra = circuit_edge_coupler_array(1)
             cell.add_placed(
                 extra,
-                "edge_coupler_extra",
+                name="edge_coupler_extra",
                 x=(left_x - arr_bb.xmin) - _p.edge_coupling_pitch_for_circuits.value,
                 y=facet_y - arr_bb.ymin,
             )
@@ -176,7 +176,7 @@ def die_scaffold(
         sp_bb = spiral.bbox
         cell.add_placed(
             spiral,
-            "test_spiral_sm",
+            name="test_spiral_sm",
             x=((left_x + arr_bb.dx) + _SPIRAL_GAP) - sp_bb.xmin,
             y=(-half_h + _p.keepout_width.value + _SPIRAL_VERTICAL_SHIFT) - sp_bb.ymin,
         )
@@ -205,7 +205,7 @@ def die_scaffold(
             array_width = bp_bb.dx
         cell.add_placed(
             bp,
-            "bondpads",
+            name="bondpads",
             x=right_x - placed_xmax,
             y=bottom_y - placed_ymin,
             rotation=bondpad_rotation,
@@ -219,7 +219,7 @@ def die_scaffold(
         tb = therm.bbox
         therm_x = ((right_x - array_width) - _THERMISTANCE_GAP) - tb.xmax
         therm_y = (bottom_y - _THERMISTANCE_DROP) - tb.ymin
-        cell.add_placed(therm, "thermistance_bonding_pad", x=therm_x, y=therm_y)
+        cell.add_placed(therm, name="thermistance_bonding_pad", x=therm_x, y=therm_y)
         therm_left = therm_x + tb.xmin
         therm_top = therm_y + tb.ymax
 
@@ -236,7 +236,7 @@ def die_scaffold(
         "gc_align_br": (right_inner - ab.xmax, bot_inner - ab.ymin),
     }
     for cname, (cx, cy) in corners.items():
-        cell.add_placed(gratingcoupler_alignment_rib_sm_800nm_ext(), cname, x=cx, y=cy)
+        cell.add_placed(gratingcoupler_alignment_rib_sm_800nm_ext(), name=cname, x=cx, y=cy)
 
     # Per-die PCM & calibration block (docs/pcm_cells.md): placed just left of
     # the thermistance bonding pad (its DC-pad end nearest it), tops aligned.

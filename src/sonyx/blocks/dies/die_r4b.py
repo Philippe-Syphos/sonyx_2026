@@ -34,8 +34,8 @@ def die_r4b() -> fw.Component:
     x0 = -mb.center_x  # centre the electrode in x
     bot_y = -half_h + _p.gsg_modulator_vertical_shift.value - mb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
-    mod_bot = cell.add_placed(modulator, "gsg_modulator_bot", x=x0, y=bot_y)
-    mod_top = cell.add_placed(modulator, "gsg_modulator_top", x=x0, y=top_y)
+    mod_bot = cell.add_placed(modulator, name="gsg_modulator_bot", x=x0, y=bot_y)
+    mod_top = cell.add_placed(modulator, name="gsg_modulator_top", x=x0, y=top_y)
     # RF launch on both electrode ends: a via lifts each modulator's bottom-metal
     # electrode up to top metal, then a width taper matches the electrode bundle to
     # the GSG pad launch, ending on a GSG bondpad triplet. Input (east, e2) and

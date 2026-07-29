@@ -45,7 +45,7 @@ _RING_GAPS = (0.8, 0.4)  # um, the two ring coupler gaps (800 nm / 400 nm)
 def _open_gsg() -> fw.Component:
     """1. Open GSG pads -- stock GSG landing, signal/grounds unconnected."""
     c = fw.Component()
-    c.add_placed(pdk.cells["gsg_bondpads_top_metal_50ohms"](), "gsg")
+    c.add_placed(pdk.cells["gsg_bondpads_top_metal_50ohms"](), name="gsg")
     return c
 
 
@@ -53,7 +53,7 @@ def _open_gsg() -> fw.Component:
 def _shorted_gsg() -> fw.Component:
     """2. GSG pads shorted signal->ground by the low-R GSG short bar."""
     c = fw.Component()
-    pads = c.add_placed(pdk.cells["gsg_bondpads_top_metal_50ohms"](), "gsg")
+    pads = c.add_placed(pdk.cells["gsg_bondpads_top_metal_50ohms"](), name="gsg")
     c.put(
         pdk.cells["gsg_short_top_metal_50ohms"](),
         pads.ports.e2,
@@ -74,10 +74,10 @@ def _ring_element(gap: float) -> fw.Component:
     """
     inner = fw.Component()
     gc_out = inner.add_placed(
-        pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), "gc_out", x=0.0, y=0.0
+        pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), name="gc_out", x=0.0, y=0.0
     )
     gc_in = inner.add_placed(
-        pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), "gc_in", x=0.0, y=_FIBER_PITCH
+        pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), name="gc_in", x=0.0, y=_FIBER_PITCH
     )
     fold = pdk.cells["lbend_rib_sm_800nm_tight"]().ports["o2"].position[0]
     bus_len = _FIBER_PITCH - 2.0 * fold
@@ -98,7 +98,7 @@ def _ring_element(gap: float) -> fw.Component:
     inner.connect(bend_out.ports.o2, gc_out.ports.o1)
     # Rotate the whole ring element 90 deg.
     c = fw.Component()
-    c.add_placed(inner, "ring_elem", rotation=90.0)
+    c.add_placed(inner, name="ring_elem", rotation=90.0)
     return c
 
 
@@ -121,8 +121,8 @@ def _ring_stack() -> fw.Component:
     top = _ring_g800()
     bot = _ring_g400()
     tb, bb = top.bbox, bot.bbox
-    c.add_placed(top, "ring_g800", x=-tb.center_x, y=_RING_STACK_GAP / 2.0 - tb.ymin)
-    c.add_placed(bot, "ring_g400", x=-bb.center_x, y=-_RING_STACK_GAP / 2.0 - bb.ymax)
+    c.add_placed(top, name="ring_g800", x=-tb.center_x, y=_RING_STACK_GAP / 2.0 - tb.ymin)
+    c.add_placed(bot, name="ring_g400", x=-bb.center_x, y=-_RING_STACK_GAP / 2.0 - bb.ymax)
     return c
 
 
@@ -141,13 +141,15 @@ def _bondpad_1x2() -> fw.Component:
     xs = [-pitch / 2.0, pitch / 2.0]  # the pair, centred on x=0
     c = fw.Component()
     for i, x in enumerate(xs):
-        c.add_placed(pdk.cells["bondpad_for_test_top"](), f"pad_{i}", x=x, y=0.0, rotation=90.0)
+        c.add_placed(
+            pdk.cells["bondpad_for_test_top"](), name=f"pad_{i}", x=x, y=0.0, rotation=90.0
+        )
     # heater_cr centred between the pair, below them and raised toward them.
     heater = pdk.cells["heater_cr"]()
     hb = heater.bbox
     top_y = -pad_h / 2.0 - _BONDPAD_ARRAY_GAP + _HEATER_RAISE  # heater bbox top edge
     # Centre the heater's bbox on x=0 (its origin is not its bbox centre).
-    c.add_placed(heater, "heater", x=-hb.center_x, y=top_y - hb.ymax)
+    c.add_placed(heater, name="heater", x=-hb.center_x, y=top_y - hb.ymax)
     return c
 
 
@@ -174,5 +176,5 @@ def add_pcm_block(cell: fw.Component, x_right: float, y_top: float) -> None:
     for sub, iname, gap in entries:
         cursor += gap
         sb = sub.bbox
-        cell.add_placed(sub, iname, x=cursor - sb.xmin, y=y_top - sb.ymax)
+        cell.add_placed(sub, name=iname, x=cursor - sb.xmin, y=y_top - sb.ymax)
         cursor += sb.dx

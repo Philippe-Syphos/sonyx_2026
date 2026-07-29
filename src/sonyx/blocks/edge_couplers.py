@@ -31,7 +31,7 @@ def _edge_coupler_with_lead(extension_length: float) -> fw.Component:
     side, north, on ``rib_sm_800nm``).
     """
     unit = fw.Component()
-    ec = unit.add_placed(edgecoupler_rib_sm_800nm_ext(), "ec")
+    ec = unit.add_placed(edgecoupler_rib_sm_800nm_ext(), name="ec")
     lead = unit.put(
         make_straight(length=extension_length, cross_section=_FACET_XS),
         ec.ports.o1,

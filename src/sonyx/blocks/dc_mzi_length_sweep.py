@@ -45,7 +45,7 @@ def _bb_dc_mzi(coupling_length: float) -> fw.Component:
     (DC2 outputs, east).
     """
     cell = fw.Component()
-    d1 = cell.add_placed(_dc_dut(coupling_length), "dc1")
+    d1 = cell.add_placed(_dc_dut(coupling_length), name="dc1")
     d2 = cell.put(_dc_dut(coupling_length), (d1.name, "o3"), port_to="o2", name="dc2")
     cell.connect((d1.name, "o4"), (d2.name, "o1"))
     cell.add_port("o1", (d1.name, "o1"))
