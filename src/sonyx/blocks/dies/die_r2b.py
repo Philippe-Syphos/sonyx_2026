@@ -13,6 +13,7 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
 from ._head_coupler_block import (
+    add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_head_input_routes,
     add_mzm_input_routes,
@@ -130,7 +131,10 @@ def die_r2b() -> fw.Component:
     # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
     add_mzm_input_routes(cell)
     # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
-    add_mzm_output_routes(cell)
+    dc_ec_obs = add_mzm_output_routes(cell)
+    # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
+    # west-facing U-turn stub). Shared helper.
+    add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
     # SM waveguide-loss (cutback) test cell (moved here from R3A), placed in the
     # standard cutback slot (x-flipped, top-right band) -- same relative position
     # and orientation as the ULL cutback on R3A.

@@ -27,6 +27,7 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ._frame import die_scaffold
 from ._head_coupler_block import (
+    add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_head_input_routes,
     add_mzm_input_routes,
@@ -220,7 +221,10 @@ def die_r3b() -> fw.Component:
     # lower head -> bottom modulator), a single 4-lane bundle to the east ports.
     add_mzm_input_routes(cell, second_device="test_modulator_head_2")
     # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
-    add_mzm_output_routes(cell)
+    dc_ec_obs = add_mzm_output_routes(cell)
+    # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
+    # west-facing U-turn stub). Shared helper.
+    add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
     # SSM (super-single-mode) waveguide-loss cutback, in the clear top band on the
     # RIGHT of the die (moved here from R3A, whose top band was too narrow). Upright
     # (couplers/alignment loop on the left, spirals extending right), pushed right

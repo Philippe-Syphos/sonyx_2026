@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import picasso as fw
 from luqia_ln200 import pdk
-from picasso.routing.obstacles import route_polygons_for_child
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
@@ -16,6 +15,7 @@ from ..dc_length_sweep import add_dc_length_sweep
 from ..dc_mzi_length_sweep import add_dc_mzi_length_sweep
 from ._frame import die_scaffold
 from ._head_coupler_block import (
+    add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_head_input_routes,
     add_mzm_input_routes,
@@ -136,29 +136,10 @@ def die_r4a() -> fw.Component:
     # the DC-output chain's shared obstacle set (modulator electrode bboxes + the two
     # MZM->DC routes) which the DC->EC routes below reuse.
     dc_ec_obs = add_mzm_output_routes(cell)
-    # Output DCs -> the open circuit edge couplers, dropping south past the
-    # modulators to the die-bottom edge couplers. Reuse the accumulating obstacle
-    # set so each drop detours around the full-width electrode AND the MZM->DC routes
-    # (they share the west corridor) instead of cutting through them. Each route is
-    # materialised eagerly and registered back into the set so later calls route
-    # around the earlier ones. grid_astar with generous start/end straights splays
-    # the tight ~21 um DC output pitch out to the 127 um EC pitch; default routing.
-    # Bottom output DC -> the two rightmost open edge couplers (o3 -> c5 east,
-    # o4 -> c4 west).
-    cell.autoroute(
-        ports_a=[("test_dc_out_bot", "o3"), ("test_dc_out_bot", "o4")],
-        ports_b=[("edge_couplers_circuit", "o2_r0_c5"), ("edge_couplers_circuit", "o2_r0_c4")],
-        obstacles=dc_ec_obs,
-        materialize=True,
-        spec="routing_sm_default",
-        strategy="grid_astar",
-        step=10.0,
-        start_straight=150.0,
-        end_straight=200.0,
-        name="dc_ec_bot",
-    )
-    dc_ec_obs.add_polygons(route_polygons_for_child(cell, "dc_ec_bot"))
-    # Directional-coupler coupling-length test: 8 DCs (L sweep) + GC array,
+    # Output DCs -> the open circuit edge couplers (bottom DC -> two rightmost open,
+    # top DC -> next two, via a west-facing U-turn stub). Shared helper.
+    add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
+    # # Directional-coupler coupling-length test: 8 DCs (L sweep) + GC array,
     # top-left. Placement-only (o1/o3/o4 -> couplers, o2 open; routed later).
     add_dc_length_sweep(cell)
     # Back-to-back-coupler MZI (zero-arm) coupling-length test: same sweep/layout,

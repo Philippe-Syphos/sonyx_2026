@@ -16,6 +16,7 @@ from ..crossing_mzi import add_crossing_mzis
 from ..thermal_crosstalk import add_thermal_crosstalk
 from ._frame import die_scaffold
 from ._head_coupler_block import (
+    add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_mzm_input_routes,
     add_mzm_output_routes,
@@ -180,7 +181,10 @@ def die_r3a() -> fw.Component:
     # lower head -> bottom modulator), a single 4-lane bundle to the east ports.
     add_mzm_input_routes(cell, second_device="test_modulator_head_2")
     # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
-    add_mzm_output_routes(cell)
+    dc_ec_obs = add_mzm_output_routes(cell)
+    # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
+    # west-facing U-turn stub). Shared helper.
+    add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
     # ULL waveguide-loss (cutback) test cell: a horizontal coupler array on top of
     # a vertical stack of four horizontal delay spirals. Placed in the standard
     # cutback slot (x-flipped, top-right band). The SM twin now lives on R2B in the

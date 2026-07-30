@@ -14,6 +14,7 @@ from ...parameters import parameters as _p
 from ..gc_test_array import add_open_gc_array
 from ._frame import die_scaffold
 from ._head_coupler_block import (
+    add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_head_input_routes,
     add_mzm_input_routes,
@@ -178,7 +179,10 @@ def die_r1b() -> fw.Component:
     # The third modulator (gsg_modulator_top_2) has its own head and is not fed here.
     add_mzm_input_routes(cell)
     # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
-    add_mzm_output_routes(cell)
+    dc_ec_obs = add_mzm_output_routes(cell)
+    # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
+    # west-facing U-turn stub). Shared helper.
+    add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
     # Open grating-coupler array (4 couplers) + left alignment loop, top-right --
     # unrouted fibre I/O for the extra top modulator (gsg_modulator_top_2).
     add_open_gc_array(cell, num=4, prefix="mod_top2_gc")

@@ -12,6 +12,7 @@ import picasso as fw
 from luqia_ln200 import pdk
 from picasso.component import PortSpec
 from picasso.routing import ObstacleSet
+from picasso.routing.obstacles import route_polygons_for_child
 
 # Input block (modulator_head + one directional coupler below it), anchored to
 # the outer (east) edge of the lower input GSG pad group (rf_pads_bot_in.e2).
@@ -185,7 +186,7 @@ def add_mzm_output_routes(cell: fw.Component) -> ObstacleSet:
             spec="routing_sm_default",
             strategy="vgraph_rect",
             name=name,
-            start_straight=120.0
+            start_straight=120.0,
         )
         # Register the just-materialised route as an obstacle for later routes in
         # the chain. Use the route's *bbox* (add_instance) rather than its full wire
@@ -198,6 +199,80 @@ def add_mzm_output_routes(cell: fw.Component) -> ObstacleSet:
         # USER/CONTAINMENT tiers; ROUTES_TIER is for resolve_routes(route_obstacles=True)).
         obs.add_instance(cell.instances[name])
     return obs
+
+
+def add_dc_output_to_ec_routes(
+    cell: fw.Component, num_edge_couplers: int, obstacles: ObstacleSet
+) -> None:
+    """Route both output DCs down to the open circuit edge couplers.
+
+    Edge-coupler allocation (see :func:`._frame.die_scaffold`): with ``c0`` / ``c1``
+    the loopback, the two rightmost feeding the spiral and the next two the input
+    block, the four *open* couplers are the middle ``c2..c5`` (for ``num=10``). The
+    bottom output DC feeds the two rightmost open (``c_{num-5}`` / ``c_{num-6}``) and
+    the top DC the next two (``c_{num-7}`` / ``c_{num-8}``).
+
+    Both DCs face **east**. The bottom drop reaches the west corridor directly with
+    grid_astar. The top drop would otherwise wrap the long way east (a grid_astar
+    quirk when the start port faces away from the goal -- see the routing handoff),
+    so its outputs get a **bend-bend (two L-bend) U-turn stub** first, re-orienting
+    them **west**; the lower (``o4``) stub gets a 10 um straight so the two U-turns
+    (only ~21 um apart) don't collide. ``obstacles`` is the shared DC-output-chain
+    set from :func:`add_mzm_output_routes`; each drop is registered back (bbox) so
+    the next route avoids it.
+    """
+    n = num_edge_couplers
+    # Bottom output DC -> the two rightmost open edge couplers.
+    cell.autoroute(
+        ports_a=[("test_dc_out_bot", "o3"), ("test_dc_out_bot", "o4")],
+        ports_b=[
+            ("edge_couplers_circuit", f"o2_r0_c{n - 5}"),
+            ("edge_couplers_circuit", f"o2_r0_c{n - 6}"),
+        ],
+        obstacles=obstacles,
+        materialize=True,
+        spec="routing_sm_default",
+        strategy="grid_astar",
+        step=25.0,
+        start_straight=50.0,
+        end_straight=200.0,
+        name="dc_ec_bot",
+    )
+    # Long L/U drop -- register its actual wire polygons (its bbox is mostly empty
+    # and would over-block the top drop sharing the west corridor).
+    obstacles.add_polygons(route_polygons_for_child(cell, "dc_ec_bot"))
+    # Top output DC -> the next two open edge couplers, via a west-facing U-turn stub.
+    top_stub_ends: list[PortSpec] = []
+    for p, pre_straight in (("o3", 0.0), ("o4", 10.0)):
+        anchor: PortSpec = ("test_dc_out_top", p)
+        if pre_straight > 0.0:
+            s = cell.put(
+                pdk.cells["straight_rib_sm_800nm"](length=pre_straight), anchor,
+                port_to="o1", name=f"dc_top_stub0_{p}",
+            )
+            anchor = (s.name, "o2")
+        b1 = cell.put(
+            pdk.cells["lbend_rib_sm_800nm"](), anchor, port_to="o1", name=f"dc_top_stub1_{p}"
+        )
+        b2 = cell.put(
+            pdk.cells["lbend_rib_sm_800nm"](), (b1.name, "o2"),
+            port_to="o1", name=f"dc_top_stub2_{p}",
+        )
+        top_stub_ends.append((b2.name, "o2"))
+    cell.autoroute(
+        ports_a=top_stub_ends,
+        ports_b=[
+            ("edge_couplers_circuit", f"o2_r0_c{n - 7}"),
+            ("edge_couplers_circuit", f"o2_r0_c{n - 8}"),
+        ],
+        obstacles=obstacles,
+        materialize=True,
+        spec="routing_sm_default",
+        strategy="vgraph_rect",
+        start_straight=50.0,
+        end_straight=100.0,
+        name="dc_ec_top",
+    )
 
 
 def add_head_and_couplers(

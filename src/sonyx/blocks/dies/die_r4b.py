@@ -16,6 +16,7 @@ from ..mzi_ladder import add_mzi_ladder
 from ..paperclip_mzi_sweep import add_paperclip_mzi_sweep
 from ._frame import die_scaffold
 from ._head_coupler_block import (
+    add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_head_input_routes,
     add_mzm_input_routes,
@@ -132,7 +133,10 @@ def die_r4b() -> fw.Component:
     # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
     add_mzm_input_routes(cell)
     # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
-    add_mzm_output_routes(cell)
+    dc_ec_obs = add_mzm_output_routes(cell)
+    # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
+    # west-facing U-turn stub). Shared helper.
+    add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
     # Unbalanced-MZI n_eff / n_g calibration ladder (ord + ext, 6 MZIs) across
     # the clear top band, with two constant-pitch N-S grating-coupler arrays
     # (one per orientation group). Placement only -- not routed yet.
