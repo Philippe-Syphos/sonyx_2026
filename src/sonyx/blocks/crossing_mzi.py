@@ -1,4 +1,4 @@
-"""Balanced-bridge crossing crosstalk MZIs (R3A) -- geometry-variation sweep.
+"""Balanced-bridge crossing crosstalk MZIs (R3B) -- geometry-variation sweep.
 
 The "MZI #2" balanced bridge: two crossings act as the couplers of a Mach-
 Zehnder, wired with the through/cross **swap** so each arm carries exactly one
@@ -11,11 +11,13 @@ cross arm returns ``_ARM_DN`` (after a short ``_CROSS_DIP`` first leg), so
 crosstalk is read from the balanced-port / carrier-port ratio, immune to common-
 mode loss; the small differential arm loss enters only as a fractional error.
 
-Two test-cell blocks on R3A, each with its own GC array + alignment loop:
+Six test-cell blocks on R3B, laid left to right -- one per geometry variation,
+each a single bridge with **its own** GC array (``_GC_PER_MZI`` couplers) and
+alignment loop:
 
-- **MMI block (top)** -- three bridges sweeping the MMI bar length
+- **MMI variations** -- three bridges sweeping the MMI bar length
   (``length_scale`` in :data:`_MMI_LENGTH_SCALES`, detuning the self-imaging).
-- **Tapered block (below)** -- three bridges sweeping the tapered collimation
+- **Tapered variations** -- three bridges sweeping the tapered collimation
   factor (``m`` in :data:`_TAPERED_M`, the widened-width sweet spot).
 
 Placement-only at the die level: the device ports are routed to the couplers in a
@@ -32,7 +34,6 @@ from luqia_ln200.cells.couplers import (
 )
 from picasso.leaves import make_array
 from picasso.recipe import recipe
-from picasso.routing import resolve_routes
 from picasso.routing.spec import RoutingSpec
 
 from ..parameters import parameters as _p
@@ -55,13 +56,15 @@ _BEND_SETBACK = 50.0  # Euler L-bend corner setback consumed per leg (o2 at (50,
 _MMI_LENGTH_SCALES: tuple[float, ...] = (0.9, 1.0, 1.1)
 _TAPERED_M: tuple[float, ...] = (3.0, 4.0, 5.0)
 
-# Placement on R3A (top-left band): two stacked blocks, each three cells side by
-# side with a GC array + alignment loop above.
+# Placement on R3B (top band): six self-contained blocks laid left to right, each
+# one MZI under its own GC array + alignment loop.
 _BLOCK_LEFT_MARGIN = 200.0  # off the left inner edge (was 100; +100 to clear overlap)
 _BLOCK_TOP_MARGIN = 40.0
-_BLOCK_CELL_GAP = 140.0  # horizontal gap between cells in a block
-_GC_ROW_GAP = 120.0  # gap from a GC array to its cell row
-_BLOCK_GAP = 250.0  # vertical gap between the MMI (top) and tapered (bottom) blocks
+_BLOCK_CELL_GAP = 140.0  # horizontal gap between adjacent blocks
+_GC_ROW_GAP = 120.0  # gap from a GC array to its MZI
+# Couplers per block: the bridge uses 3 (in, balanced out, carrier out); the 4th
+# is a spare, so every MZI block carries 4 free grating couplers.
+_GC_PER_MZI = 4
 
 
 def _balanced_bridge(crossing: fw.Component) -> fw.Component:
@@ -96,7 +99,8 @@ def _balanced_bridge(crossing: fw.Component) -> fw.Component:
     cell.add_port("in", x1.ports["o1"])
     cell.add_port("out_bal", x2.ports["o2"])
     cell.add_port("out_car", x2.ports["o3"])
-    resolve_routes(cell)  # materialise geometry so the placed bbox is correct
+    # No resolve_routes() needed: the two arm routes above are lowered eagerly at
+    # their route() call, so the placed bbox is already correct here.
     cell.cell_type = "test_mzi"
     cell.calibration_status = "PLACEHOLDER"
     cell.parameters.arm_length_imbalance_um = 2.0 * (_ARM_UP - _ARM_DN)
@@ -118,14 +122,17 @@ def crossing_mzi_tapered(m: float = 4.0) -> fw.Component:
 def _place_block(
     cell: fw.Component,
     prefix: str,
-    named_cells: list[tuple[str, fw.Component]],
+    name: str,
+    comp: fw.Component,
     x_left: float,
     y_top: float,
 ) -> float:
-    """Place a GC array + alignment loop (tops at ``y_top``) over a row of cells.
+    """Place **one** MZI with its own GC array + alignment loop (tops at ``y_top``).
 
-    Cells are laid left to right from ``x_left``, tops aligned below the GC row.
-    Returns the block's bottom y (for stacking the next block beneath it).
+    The block is a ``_GC_PER_MZI``-coupler array (tops at ``y_top``) with an
+    alignment loop one pitch to its west, and the MZI ``_GC_ROW_GAP`` below,
+    left-aligned to the array. Returns the block's total width, so the caller can
+    step ``x_left`` to the next block.
     """
     pitch = _p.grating_coupling_pitch_for_tests.value
     gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
@@ -135,7 +142,7 @@ def _place_block(
     arr = make_array(
         template=gratingcoupler_rib_sm_800nm_ext(),
         rows=1,
-        cols=3 * len(named_cells),
+        cols=_GC_PER_MZI,
         dx=pitch,
         dy=0.0,
     )
@@ -143,39 +150,36 @@ def _place_block(
     array_xmin = (x_left + lb.dx) + (pitch - gc_w)
     cell.add_placed(arr, name=f"{prefix}_gc_array", x=array_xmin - ab.xmin, y=y_top - ab.ymax)
 
-    # MZIs start at the GC array's left edge -> to the right of the alignment loop.
+    # MZI starts at the GC array's left edge -> to the right of the alignment loop.
     mzi_top = (y_top - max(lb.dy, ab.dy)) - _GC_ROW_GAP
-    x_cursor = array_xmin
-    max_h = 0.0
-    for name, comp in named_cells:
-        b = comp.bbox
-        cell.add_placed(comp, name=name, x=x_cursor - b.xmin, y=mzi_top - b.ymax)
-        x_cursor += b.dx + _BLOCK_CELL_GAP
-        max_h = max(max_h, b.dy)
-    return mzi_top - max_h
+    b = comp.bbox
+    cell.add_placed(comp, name=name, x=array_xmin - b.xmin, y=mzi_top - b.ymax)
+    return max((array_xmin + ab.dx) - x_left, (array_xmin + b.dx) - x_left)
 
 
 def add_crossing_mzis(cell: fw.Component) -> None:
-    """Place the MMI (top) and tapered (bottom) crosstalk-MZI variation blocks on R3A.
+    """Place the six crosstalk-MZI variation blocks side by side on R3B.
 
-    Each block is three balanced bridges (geometry sweep) side by side with its own
-    GC array + alignment loop, top-left band. Placement only (device ports not
-    routed to the couplers).
+    Each of the three MMI variations and three tapered variations is its **own**
+    block -- one balanced bridge under its own ``_GC_PER_MZI``-coupler GC array
+    plus alignment loop -- laid left to right along the top band. Placement only
+    (device ports not routed to the couplers).
     """
     half_w = _p.die_width.value / 2.0
     half_h = _p.die_height.value / 2.0
     kw = _p.keepout_width.value
-    x_left = (-half_w + kw) + _BLOCK_LEFT_MARGIN
+    x_cursor = (-half_w + kw) + _BLOCK_LEFT_MARGIN
     y_top = (half_h - kw) - _BLOCK_TOP_MARGIN
 
-    mmi_cells = [
+    blocks = [
         (f"crossing_mzi_mmi_s{round(s * 100):d}", crossing_mzi_mmi(length_scale=s))
         for s in _MMI_LENGTH_SCALES
-    ]
-    block_bottom = _place_block(cell, "crossing_mzi_mmi", mmi_cells, x_left, y_top)
-
-    tapered_cells = [
+    ] + [
         (f"crossing_mzi_tapered_m{round(m * 10):d}", crossing_mzi_tapered(m=m))
         for m in _TAPERED_M
     ]
-    _place_block(cell, "crossing_mzi_tapered", tapered_cells, x_left, block_bottom - _BLOCK_GAP)
+    # The cell name doubles as the instance prefix, so each block's couplers and
+    # alignment loop get unique instance names.
+    for name, comp in blocks:
+        width = _place_block(cell, name, name, comp, x_cursor, y_top)
+        x_cursor += width + _BLOCK_CELL_GAP

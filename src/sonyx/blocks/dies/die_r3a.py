@@ -12,7 +12,6 @@ from picasso.component import PortSpec
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
-from ..crossing_mzi import add_crossing_mzis
 from ..thermal_crosstalk import add_thermal_crosstalk
 from ._frame import die_scaffold
 from ._head_coupler_block import (
@@ -190,10 +189,9 @@ def die_r3a() -> fw.Component:
     # cutback slot (x-flipped, top-right band). The SM twin now lives on R2B in the
     # same slot -- see place_cutback_top_right.
     place_cutback_top_right(cell, test_waveguide_cutback_ull(), "test_waveguide_cutback_ull")
-    # Balanced-bridge crosstalk MZIs (MMI, tapered), top-left band.
-    add_crossing_mzis(cell)
-    # Thermal-crosstalk cell (heater + stacked balanced-MZI thermometers), right
-    # of the crossing MZIs. First draft, placement only.
+    # (The balanced-bridge crosstalk MZIs moved to R3B -- see die_r3b.)
+    # Thermal-crosstalk cell (heater + stacked balanced-MZI thermometers).
+    # First draft, placement only.
     add_thermal_crosstalk(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".

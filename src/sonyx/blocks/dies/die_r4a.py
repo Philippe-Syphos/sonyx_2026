@@ -13,6 +13,7 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..dc_length_sweep import add_dc_length_sweep
 from ..dc_mzi_length_sweep import add_dc_mzi_length_sweep
+from ..dc_routing import add_dc_pad_routes
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
@@ -145,6 +146,9 @@ def die_r4a() -> fw.Component:
     # Back-to-back-coupler MZI (zero-arm) coupling-length test: same sweep/layout,
     # placed to the right of the single-DC sweep. Placement-only.
     add_dc_mzi_length_sweep(cell)
+    # DC bias routing on TOP_METAL (first test of the routing_top_metal spec):
+    # the modulator head's tunable-coupler west terminal -> DC bond pad 0.
+    add_dc_pad_routes(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

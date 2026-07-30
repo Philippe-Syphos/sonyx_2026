@@ -25,6 +25,7 @@ from picasso.leaves import make_straight
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..crossing_mzi import add_crossing_mzis
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
@@ -241,6 +242,10 @@ def die_r3b() -> fw.Component:
         x=(right_inner - _SSM_CUTBACK_RIGHT_MARGIN) - sc.xmax,
         y=(top_inner - _SSM_CUTBACK_TOP_MARGIN) - sc.ymax,
     )
+    # Balanced-bridge crosstalk MZIs (moved here from R3A): six self-contained
+    # blocks (3 MMI + 3 tapered variations) laid left to right along the top band,
+    # each with its own 4-coupler GC array + alignment loop.
+    add_crossing_mzis(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

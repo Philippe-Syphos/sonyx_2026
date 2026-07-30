@@ -37,7 +37,6 @@ _MZI_GAP = 0.0  # gap between stacked MZI bboxes (touching); the moat isolates t
 _HEATER_SECTIONS = 10  # Cr ladder heater (~235 um active, ~100 ohm) -- the source
 _HEATER_GAP = 45.0  # gap from the bottom MZI to the heater below it
 _GC_ROW_GAP = 250.0  # gap from the GC array to the heater
-_MZI_X_OFFSET = 250.0  # MZI left edge right of the alignment loop (routing room)
 
 # Placement on R3A: to the right of the crossing-MZI blocks, top band.
 _TC_LEFT_MARGIN = 2050.0  # left edge off the left inner edge (+250 for routing room)
@@ -106,10 +105,11 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
     cell.add_placed(arr, name="thermal_gc_array", x=array_xmin - ab.xmin, y=y_top - ab.ymax)
 
     # MZI stack directly below the GC row (top MZI closest to the couplers),
-    # started _MZI_X_OFFSET right of the alignment loop for routing room.
+    # centred on the **grating-coupler array** (the alignment loop to its west is
+    # excluded), so the in/out routing fans symmetrically off both ends.
     mzi0 = _balanced_mzi_plain(_MZI_ARM)
     mb = mzi0.bbox
-    mzi_x_left = (x_left + lb.dx) + _MZI_X_OFFSET
+    mzi_x_left = array_xmin + (ab.dx - mb.dx) / 2.0
     mzi_top_axis = (y_top - max(lb.dy, ab.dy)) - _GC_ROW_GAP - mb.ymax
     for i in range(_NUM_MZI):
         cell.add_placed(

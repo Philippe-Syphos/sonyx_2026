@@ -42,19 +42,21 @@ if TYPE_CHECKING:
 _SPIRAL_N = 4
 _SPIRAL_MIN_CM = 2.0
 _SPIRAL_MAX_CM = 10.0
-# SM: 10 loops -> each spiral is long and thin (the 10 cm spiral is ~4.5 x 0.33 mm),
-# so the vertical stack of four stays compact (~1.4 mm tall).
-_SM_SPIRAL_N_LOOPS = 10
-# ULL: fewer loops -- each long arm is taper -> ULL straight -> taper (30 um each),
-# so short totals need longer arms; 12 keeps the 2 cm ULL spiral feasible.
-_ULL_SPIRAL_N_LOOPS = 12
-# SSM: super-single-mode; matches the SM loop count so the two share a length
-# lever arm (the gentler SSM bend just makes each spiral a touch larger).
-_SSM_SPIRAL_N_LOOPS = 10
+# All three flavours run the same loop count so the cells stay structural twins.
+# Loop count only sets the spiral's aspect ratio -- the factories solve for the
+# requested ``target_length``, so the swept total path lengths (2 -> 10 cm) are
+# unchanged; 8 loops just makes each spiral wider and shorter than 10/12 did.
+_SM_SPIRAL_N_LOOPS = 8
+_ULL_SPIRAL_N_LOOPS = 8
+_SSM_SPIRAL_N_LOOPS = 8
 _SPIRAL_STACK_GAP = 20.0  # um, vertical gap between adjacent stacked spirals
 _COUPLER_ROW_GAP = 100.0  # um, base gap between the coupler array and the spiral stack
 _SPIRAL_DROP = 40.0  # um, extra downward shift of the spiral stack (widens the coupler gap)
-_SPIRAL_X_OFFSET = 200.0  # um, x-shift of the spiral stack relative to the gratings
+# x of the (west-facing) spiral ports -- every spiral in the stack is aligned on
+# this line, so the coupler-to-spiral routing is identical for every length.
+_SPIRAL_PORT_X = 200.0
+# um, gap from the coupler array's east-most port to the spiral port line.
+_GC_TO_SPIRAL_PORT_GAP = 100.0
 
 
 def _build_cutback(
@@ -86,8 +88,11 @@ def _build_cutback(
     pitch = _p.grating_coupling_pitch_for_tests.value
     cell = fw.Component()
 
-    # Delay spirals: horizontal, stacked vertically, left edges aligned at
-    # x=_SPIRAL_X_OFFSET (shifted right of the gratings), _SPIRAL_STACK_GAP apart.
+    # Delay spirals: horizontal, stacked vertically, **port-aligned** -- every
+    # spiral's (west-facing) o1 sits on x=_SPIRAL_PORT_X, _SPIRAL_STACK_GAP apart.
+    # Aligning on the ports rather than the bboxes keeps the coupler-to-spiral
+    # routing identical across lengths (the bodies, whose width grows as the
+    # spiral shortens, then extend east by varying amounts).
     # The top spiral's top edge is y=0; the stack grows downward. spiral_i keeps
     # its length identity (i=0 shortest .. N-1 longest); `order` sets top->bottom
     # (shortest-first normally, longest-first when reversed).
@@ -100,16 +105,20 @@ def _build_cutback(
         length_cm = _SPIRAL_MIN_CM + idx * span_cm / (_SPIRAL_N - 1)
         spiral = spiral_factory(target_length=length_cm * 10000.0, n_loops=spiral_n_loops)
         sb = spiral.bbox
+        port_x = spiral.ports["o1"].position[0]
         cell.add_placed(
-            spiral, name=f"spiral_{idx}", x=_SPIRAL_X_OFFSET - sb.xmin, y=y_cursor - sb.ymax
+            spiral, name=f"spiral_{idx}", x=_SPIRAL_PORT_X - port_x, y=y_cursor - sb.ymax
         )
         y_cursor -= sb.dy + _SPIRAL_STACK_GAP
 
-    # Grating-coupler array (horizontal row, facet south) on top of the stack.
+    # Grating-coupler array (horizontal row, facet south) on top of the stack,
+    # placed so its **east-most** coupler port sits _GC_TO_SPIRAL_PORT_GAP west
+    # of the spiral port line (the array therefore runs west from there).
+    cols = 2 * _SPIRAL_N
     arr = make_array(
         template=gratingcoupler_rib_sm_800nm_ext(),
         rows=1,
-        cols=2 * _SPIRAL_N,
+        cols=cols,
         dx=pitch,
         dy=0.0,
     )
@@ -117,8 +126,10 @@ def _build_cutback(
     # stay put), so the couplers-to-spirals spacing widens without moving spirals.
     coupler_gap = _COUPLER_ROW_GAP + extra_coupler_gap
     ab = arr.bbox
-    cell.add_placed(arr, name="couplers", x=-ab.xmin, y=coupler_gap - ab.ymin)
-    # The placed array's left edge is at x=0, top at coupler_gap + ab.dy.
+    east_port_x = arr.ports[f"o1_r0_c{cols - 1}"].position[0]
+    x_arr = (_SPIRAL_PORT_X - _GC_TO_SPIRAL_PORT_GAP) - east_port_x
+    cell.add_placed(arr, name="couplers", x=x_arr, y=coupler_gap - ab.ymin)
+    array_left = x_arr + ab.xmin
 
     # Grating-coupler alignment loop one pitch to the left of the array, GC tops
     # on the same line (align bbox tops) so it continues the array's pitch.
@@ -128,7 +139,7 @@ def _build_cutback(
     cell.add_placed(
         loop,
         name="gc_align",
-        x=-(pitch - gc_w) - lb.xmax,
+        x=(array_left - (pitch - gc_w)) - lb.xmax,
         y=(coupler_gap + ab.dy) - lb.ymax,
     )
     return cell
@@ -142,10 +153,14 @@ def test_waveguide_cutback_sm(extra_coupler_gap: float = 0.0) -> fw.Component:
     :func:`spiral_rib_sm_800nm_for_length` (``_SM_SPIRAL_N_LOOPS`` loops).
     ``extra_coupler_gap`` raises the coupler row (spirals unchanged) -- used on
     R3A to lift the SM grating array onto the ULL array's line while the SM
-    spirals stay interleaved below.
+    spirals stay interleaved below. Built with ``reverse=True`` (longest spiral
+    at the top), matching the ULL and SSM twins.
     """
     return _build_cutback(
-        spiral_rib_sm_800nm_for_length, _SM_SPIRAL_N_LOOPS, extra_coupler_gap=extra_coupler_gap
+        spiral_rib_sm_800nm_for_length,
+        _SM_SPIRAL_N_LOOPS,
+        reverse=True,
+        extra_coupler_gap=extra_coupler_gap,
     )
 
 
@@ -220,22 +235,23 @@ def imbricated_ull_offset(
     return dx, dy
 
 
-# Standard cutback placement (the ULL-on-R3A convention, now shared by every die
-# that carries a single waveguide-loss cutback): x-flipped in the clear top band
-# (spirals extend left, coupler array + alignment loop on the right), right edge
-# held _CUTBACK_RIGHT_MARGIN off the die right inner edge, coupler tops on the
-# common line one alignment-loop below the top inner edge.
+# Standard cutback placement, shared by every die that carries a single
+# waveguide-loss cutback: **upright** in the clear top band (coupler array +
+# alignment loop on the left, spirals extending east with their ports facing
+# west), right edge held _CUTBACK_RIGHT_MARGIN off the die right inner edge,
+# coupler tops on the common line one alignment-loop below the top inner edge.
 _CUTBACK_RIGHT_MARGIN = 250.0
 _CUTBACK_COUPLER_LINE = 70.0  # coupler-tops line offset above (top_inner - corner_loop_dy)
 
 
 def place_cutback_top_right(cell: fw.Component, cutback: fw.Component, name: str) -> None:
-    """Place ``cutback`` x-flipped in the top-right band (see the constants above).
+    """Place ``cutback`` upright in the top-right band (see the constants above).
 
-    Uniform placement for a die's single waveguide-loss cutback: ``mirror=True,
-    rotation=180`` so the spirals extend left and the coupler array + alignment
-    loop sit on the right, the block's right edge ``_CUTBACK_RIGHT_MARGIN`` off
-    the right inner edge, coupler tops on the shared ``_CUTBACK_COUPLER_LINE``.
+    Uniform placement for a die's single waveguide-loss cutback: no mirror /
+    rotation, so the spiral ports face **west** toward the coupler array on the
+    left and the spiral bodies extend east. The block's right edge sits
+    ``_CUTBACK_RIGHT_MARGIN`` off the right inner edge, coupler tops on the
+    shared ``_CUTBACK_COUPLER_LINE`` (same slot as the upright SSM cell on R3B).
     """
     half_h = _p.die_height.value / 2.0
     right_inner = _p.die_width.value / 2.0 - _p.keepout_width.value
@@ -246,8 +262,6 @@ def place_cutback_top_right(cell: fw.Component, cutback: fw.Component, name: str
     cell.add_placed(
         cutback,
         name=name,
-        x=(right_inner - _CUTBACK_RIGHT_MARGIN) + b.xmin,
+        x=(right_inner - _CUTBACK_RIGHT_MARGIN) - b.xmax,
         y=y_couplers - b.ymax,
-        mirror=True,
-        rotation=180.0,
     )

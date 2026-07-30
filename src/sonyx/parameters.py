@@ -164,12 +164,14 @@ class Parameters(ParametersBase):
         ),
     )
     dc_test_pad_row_y = ParameterField(
-        1242.0,
+        1092.0,
         units="um",
         description=(
             "Y centreline of the DC test bond-pad rows, shared across test cells "
             "so their pad rows line up on one horizontal (e.g. the heater and "
-            "paperclip MZI blocks on R4B). Absolute die coordinate."
+            "paperclip MZI blocks on R4B). Absolute die coordinate. Dropped 150 um "
+            "from 1242 to open up the spacing between the pad row and the test "
+            "blocks above it."
         ),
     )
     gsg_modulator_spacing = ParameterField(

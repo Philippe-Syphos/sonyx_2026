@@ -49,10 +49,16 @@ _LABEL_MARGIN = 60.0
 # left, and how far the pad drops below the array bottom.
 _THERMISTANCE_GAP = 300.0
 _THERMISTANCE_DROP = 100.0
+# Clearance (um) from the top modulator's east (input) GSG pad group up to the
+# thermistance bonding pad parked above it -- see
+# :func:`place_thermistance_over_top_rf_pads`.
+_THERMISTANCE_OVER_RF_GAP = 1000.0
 
 # Gap (um) between the per-die PCM & calibration block's right edge and the
 # thermistance bonding pad it sits next to (docs/pcm_cells.md).
 _PCM_GAP = 200.0
+# Extra westward shift (um) of the whole PCM block, on every die.
+_PCM_WEST_SHIFT = 1500.0
 
 # Single SM loss/delay spiral placed just east of the rightmost circuit edge
 # coupler: target path length (5 cm), loop count, and gap from the array edge.
@@ -259,13 +265,42 @@ def die_scaffold(
     for cname, (cx, cy) in corners.items():
         cell.add_placed(gratingcoupler_alignment_rib_sm_800nm_ext(), name=cname, x=cx, y=cy)
 
-    # Per-die PCM & calibration block (docs/pcm_cells.md): placed just left of
-    # the thermistance bonding pad (its DC-pad end nearest it), tops aligned.
+    # Per-die PCM & calibration block (docs/pcm_cells.md): placed left of where
+    # the thermistance bonding pad is anchored (its DC-pad end nearest it), tops
+    # aligned, then shifted a further _PCM_WEST_SHIFT west.
     # Falls back to the top margin if this die has no bond-pad array.
     if therm_left is not None and therm_top is not None:
-        add_pcm_block(cell, x_right=therm_left - _PCM_GAP, y_top=therm_top)
+        add_pcm_block(
+            cell, x_right=therm_left - _PCM_GAP - _PCM_WEST_SHIFT, y_top=therm_top
+        )
     else:
-        add_pcm_block(cell, x_right=right_inner, y_top=top_inner)
+        add_pcm_block(cell, x_right=right_inner - _PCM_WEST_SHIFT, y_top=top_inner)
 
     cell.cell_type = "die_assembly"
     return cell
+
+
+def place_thermistance_over_top_rf_pads(
+    cell: fw.Component, pads_instance: str = "rf_pads_top_in"
+) -> None:
+    """Move the scaffold's thermistance pad above the top modulator's east GSG pads.
+
+    :func:`die_scaffold` parks ``thermistance_bonding_pad`` next to the bond-pad
+    array (it has to: the scaffold runs before the die lays its RF launch chain,
+    and the PCM block anchors off that parked position). This re-places it once
+    the RF pads exist: centred in x on ``pads_instance`` -- the **east** (input,
+    ``e2``) GSG pad group of the **top** modulator -- with its bottom edge
+    ``_THERMISTANCE_OVER_RF_GAP`` above that group's top edge.
+
+    A no-op on dies lacking either instance (e.g. R1A has no ``rf_pads_top_in``).
+    """
+    if "thermistance_bonding_pad" not in cell.instances or pads_instance not in cell.instances:
+        return
+    therm = cell.instances["thermistance_bonding_pad"]
+    pads = cell.instances[pads_instance]
+    tb, pb = therm.bbox, pads.bbox
+    assert tb is not None and pb is not None  # placed instances always have geometry
+    therm.move(
+        pb.center_x - tb.center_x,
+        (pb.ymax + _THERMISTANCE_OVER_RF_GAP) - tb.ymin,
+    )

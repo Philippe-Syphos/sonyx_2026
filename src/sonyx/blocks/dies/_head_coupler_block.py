@@ -14,6 +14,8 @@ from picasso.component import PortSpec
 from picasso.routing import ObstacleSet
 from picasso.routing.obstacles import route_polygons_for_child
 
+from ._frame import place_thermistance_over_top_rf_pads
+
 # Input block (modulator_head + one directional coupler below it), anchored to
 # the outer (east) edge of the lower input GSG pad group (rf_pads_bot_in.e2).
 _HEAD_SHIFT_X = -500.0  # um, block right edge vs the pad's east edge (+x = right)
@@ -182,7 +184,6 @@ def add_mzm_output_routes(cell: fw.Component) -> ObstacleSet:
             ports_a=[(mod, "o1"), (mod, "o2")],
             ports_b=[(dc, "o2"), (dc, "o1")],
             obstacles=obs,
-            materialize=True,
             spec="routing_sm_default",
             strategy="vgraph_rect",
             name=name,
@@ -196,7 +197,7 @@ def add_mzm_output_routes(cell: fw.Component) -> ObstacleSet:
         # because these MZM->DC loops are compact (bbox ~= the route); for a long
         # L/U route whose bbox is mostly empty, prefer the polygon form.
         # Registers into the default USER_TIER (autoroute only reads a passed set's
-        # USER/CONTAINMENT tiers; ROUTES_TIER is for resolve_routes(route_obstacles=True)).
+        # USER/CONTAINMENT tiers; ROUTES_TIER is for ObstacleSet.add_routes).
         obs.add_instance(cell.instances[name])
     return obs
 
@@ -230,7 +231,6 @@ def add_dc_output_to_ec_routes(
             ("edge_couplers_circuit", f"o2_r0_c{n - 6}"),
         ],
         obstacles=obstacles,
-        materialize=True,
         spec="routing_sm_default",
         strategy="grid_astar",
         step=25.0,
@@ -266,7 +266,6 @@ def add_dc_output_to_ec_routes(
             ("edge_couplers_circuit", f"o2_r0_c{n - 8}"),
         ],
         obstacles=obstacles,
-        materialize=True,
         spec="routing_sm_default",
         strategy="vgraph_rect",
         start_straight=50.0,
@@ -346,3 +345,7 @@ def add_head_and_couplers(
             x=(ax + _OUT_DC_SHIFT_X) - odb.xmin,
             y=(ay + _OUT_DC_SHIFT_Y) - odb.center_y,
         )
+    # The die's RF launch chain is complete by the time this helper runs, so this
+    # is the shared hook where the scaffold's parked thermistance bonding pad gets
+    # re-placed above the top modulator's east GSG pads (no-op on R1A).
+    place_thermistance_over_top_rf_pads(cell)

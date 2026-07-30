@@ -63,6 +63,9 @@ _REF_RISER_MARGIN = 40.0
 # ~x -2088). Devices are left-aligned by their input port and extend up + east.
 _INPUT_X = -1800.0
 _ROW_PITCH = 280.0  # vertical centre-to-centre of stacked MZIs
+# Eastward shift (um) of the three TOPS devices only -- the GC array, alignment
+# loop and DC pads stay anchored at _INPUT_X.
+_MZI_EAST_SHIFT = 1100.0
 
 # Grating-coupler array (north of the block) + left alignment loop, and DC bond
 # pads (below the block). One in + one out coupler per MZI.
@@ -237,7 +240,9 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
 
     A GC array + left alignment loop (north), the 3 paperclip-TOPS MZIs
     (num_arms 3/5/7) stacked below it, and 4 DC bond pads below those. Devices
-    are left-aligned by their input port at ``_INPUT_X``. Placement-only.
+    are left-aligned by their input port at ``_INPUT_X`` shifted east by
+    ``_MZI_EAST_SHIFT``; the couplers and pads stay at ``_INPUT_X``.
+    Placement-only.
     """
     half_h = _p.die_height.value / 2.0
     kw = _p.keepout_width.value
@@ -254,7 +259,12 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
         if y_input0 is None:  # anchor the top device by its top edge
             y_input0 = y_block_top - (b.ymax - o1[1])
         y_input = y_input0 - i * _ROW_PITCH
-        cell.add_placed(mzi, name=f"paperclip_mzi_N{n}", x=_INPUT_X - o1[0], y=y_input - o1[1])
+        cell.add_placed(
+            mzi,
+            name=f"paperclip_mzi_N{n}",
+            x=(_INPUT_X + _MZI_EAST_SHIFT) - o1[0],
+            y=y_input - o1[1],
+        )
 
     # DC pads on the same row as the heater_cr block's pads (left cells).
     _add_dc_pads(cell)
