@@ -5,27 +5,22 @@ Planned test content (``tapeout_plan_reticle_v1.md`` §4.0): DC reflectometer
 
 R3B is the **bespoke-electrode** test die: its two SM GSG modulators use a
 widened signal-to-ground gap (the "safe" variant — metal pulled back from the
-optical line), pinned to the PDK ``gsg_gap`` plus a per-modulator delta. The
-electrode + its BOT↔TOP via are hand-built inline here (not registered PDK
-cells); the taper → pad launch stays the stock PDK chain.
+optical line), pinned to the PDK ``gsg_gap`` plus a per-modulator delta. Both
+the modulator and its BOT↔TOP via are the stock PDK cells with their surfaced
+gap knobs (``straight_gsg_modulator_800nm(gap=...)`` and the split-gap
+``gsg_via_electrode_top_bot_holes_50ohms(bot_gap=...)``); the taper → pad
+launch stays the stock PDK chain.
 """
 
 from __future__ import annotations
 
 import picasso as fw
 from luqia_ln200 import pdk
-from luqia_ln200.cells.dc import via_top_bot_holes
-from luqia_ln200.cells.modulators import _cover_modulator_with_moat  # shared moat draw
-from luqia_ln200.cells.rf import _build_gsg_split_via  # split-gap GSG via (BOT bespoke, TOP PDK)
-from luqia_ln200.tech.cross_sections import cross_sections as _xs
-from luqia_ln200.tech.cross_sections import gsg_electrode
-from luqia_ln200.tech.layers import layers as _layers
 from luqia_ln200.tech.parameters import parameters as _pdk
-from picasso.leaves import make_straight
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
-from ..crossing_mzi import add_crossing_mzis
+from ..crossing_mzi import add_crossing_mzi_gc_routes, add_crossing_mzis
 from ..dc_routing import add_dc_pad_routes
 from ._frame import die_scaffold
 from ._head_coupler_block import (
@@ -48,75 +43,31 @@ _EXTRA_HEAD_SPACING = 100.0
 # they track it (the "safe" wider-gap variant -- metal further from the mode).
 _GAP_DELTA_TOP = 0.5
 _GAP_DELTA_BOT = 1.0
-# Metal-in-moat inclusion (um) on the electrode top/bottom edges -- matches the
-# PDK modulator's _MODULATOR_METAL_MOAT_INCLUSION.
-_MOD_MOAT_INCLUSION = 5.0
 
 
 def _bespoke_gap_modulator(length: float, gap: float) -> fw.Component:
-    """SM GSG modulator with a bespoke signal-to-ground gap (inline, not a PDK cell).
+    """The PDK SM GSG modulator at a bespoke signal-to-ground ``gap``.
 
-    A parameter-test copy of the PDK ``straight_gsg_modulator_800nm``: one GSG
-    electrode straight (signal / ground at the process defaults, but a widened
-    ``gap``) with two ``rib_sm_800nm`` ribs re-centred in the widened gaps, all
-    under one ``WG_RIB.field`` moat enclosing the electrode metal. Ports match
-    the PDK modulator: ``o1``/``o2`` (west), ``o3``/``o4`` (east), ``e1``/``e2``
-    (electrode, on the bespoke cross-section).
+    ``straight_gsg_modulator_800nm`` with its surfaced gap knob: electrode
+    grounds pulled back to ``gap`` and the ribs re-centred in the widened
+    gaps. Ports: ``o1``/``o2`` (west), ``o3``/``o4`` (east), ``e1``/``e2``
+    (electrode, on the bespoke-gap cross-section).
     """
-    signal = _pdk.gsg_signal_width.value
-    ground = _pdk.gsg_ground_width.value
-    electrode_xs = gsg_electrode(
-        signal=signal, ground=ground, gap=gap, layer=_layers.BOT_METAL,
-        name=f"gsg_electrode_bot_metal_gap{gap:g}",
-    )
-    # Each rib sits at the centre of a signal-to-ground gap: (signal + gap) / 2.
-    rib_y = (signal + gap) / 2.0
-    m = fw.Component()
-    electrode = m.add_placed(
-        make_straight(length=length, cross_section=electrode_xs), name="electrode"
-    )
-    rib_top = m.add_placed(
-        make_straight(length=length, cross_section="rib_sm_800nm"), name="rib_top", y=+rib_y
-    )
-    rib_bot = m.add_placed(
-        make_straight(length=length, cross_section="rib_sm_800nm"), name="rib_bot", y=-rib_y
-    )
-    # One WG_RIB.field moat over the modulator, enclosing the electrode metal by
-    # _MOD_MOAT_INCLUSION um on the top/bottom edges (the PDK modulator's own moat
-    # draw; the rib straights' moats union into it).
-    _cover_modulator_with_moat(m, inclusion=_MOD_MOAT_INCLUSION)
-    m.add_port("o1", rib_top.ports["o1"])
-    m.add_port("o2", rib_bot.ports["o1"])
-    m.add_port("o3", rib_top.ports["o2"])
-    m.add_port("o4", rib_bot.ports["o2"])
-    m.add_port("e1", electrode.ports["o1"])
-    m.add_port("e2", electrode.ports["o2"])
-    m.cell_type = "modulator_straight"
-    return m
+    return pdk.cells["straight_gsg_modulator_800nm"](length=length, gap=gap)
 
 
 def _bespoke_via(gap: float) -> fw.Component:
     """Split-gap GSG electrode via: BOT_METAL at the widened ``gap``, TOP at PDK gap.
 
-    A *true* split-gap via (:func:`_build_gsg_split_via`): the BOT_METAL grounds
-    are drawn at the bespoke (widened) ``gap`` to match the modulator electrode,
-    the TOP_METAL grounds physically at the PDK ``gsg_gap`` to match the
-    downstream stock taper, and the Via1/Via2 hole array bridges the sub-µm to
-    ~1 µm ground step **inside** the via contact (in the ~188 µm ground
-    y-overlap). The stock ``gsg_taper_electrode_to_pads_top_metal_50ohms`` then
-    abuts the real TOP (PDK) geometry on ``top_e1`` / ``top_e2``.
+    The PDK ``gsg_via_electrode_top_bot_holes_50ohms`` with its surfaced
+    ``bot_gap``: BOT_METAL grounds at the bespoke gap to match the modulator
+    electrode, TOP_METAL grounds at the PDK ``gsg_gap`` to match the
+    downstream stock taper, the Via1/Via2 hole array bridging the ground step
+    **inside** the via contact. The stock
+    ``gsg_taper_electrode_to_pads_top_metal_50ohms`` then abuts the real TOP
+    (PDK) geometry on ``top_e1`` / ``top_e2``.
     """
-    bot_xs = gsg_electrode(
-        signal=_pdk.gsg_signal_width.value, ground=_pdk.gsg_ground_width.value,
-        gap=gap, layer=_layers.BOT_METAL, name=f"gsg_electrode_bot_metal_gap{gap:g}",
-    )
-    return _build_gsg_split_via(
-        bot_xs=bot_xs,
-        top_xs=_xs.gsg_electrode_top_metal_50ohms,
-        length=_pdk.bondpad_width.value,
-        description=f"split-gap GSG electrode via (BOT gap {gap:g} um, TOP PDK gap)",
-        stamp=via_top_bot_holes,
-    )
+    return pdk.cells["gsg_via_electrode_top_bot_holes_50ohms"](bot_gap=gap)
 
 
 def die_r3b() -> fw.Component:
@@ -244,9 +195,11 @@ def die_r3b() -> fw.Component:
         y=(top_inner - _SSM_CUTBACK_TOP_MARGIN) - sc.ymax,
     )
     # Balanced-bridge crosstalk MZIs (moved here from R3A): six self-contained
-    # blocks (3 MMI + 3 tapered variations) laid left to right along the top band,
-    # each with its own 4-coupler GC array + alignment loop.
+    # blocks in two rows of three along the top band -- the MMI variations on top,
+    # the tapered ones below -- each with its own 4-coupler GC array + alignment loop.
     add_crossing_mzis(cell)
+    # Each block's west grating coupler -> that bridge's west input port.
+    add_crossing_mzi_gc_routes(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads

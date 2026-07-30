@@ -7,11 +7,10 @@ of a different **fold count** (num_arms = 3 / 5 / 7) on one arm; the heater is t
 arm-lengths share that one heater footprint (N=1 would be the straight-TOPS
 baseline in the neighbouring heater_cr block).
 
-Each paperclip TOPS is composed from PDK parts: ``make_paperclip`` (num_arms
-folded bundle) + a centred ``heater_cr`` (mirrors ``paperclip_tops_rib_sm_800nm``,
-which fixes num_arms=3). The paperclip is 150-360 um tall, so the MZI arms are
-fanned with **L-bend risers** (a straight of the paperclip's height between two
-90 deg bends), not S-bends.
+Each paperclip TOPS is the PDK ``paperclip_tops_rib_sm_800nm`` with the surfaced
+``num_arms`` overridden per instance (default heater, default arm length). The
+paperclip is 150-360 um tall, so the MZI arms are fanned with **L-bend risers**
+(a straight of the paperclip's height between two 90 deg bends), not S-bends.
 
 MZI topology (offset-coupler form, by request): from the input MMI's top port,
 put()-cascade lbend -> straight(=paperclip height) -> lbend -> paperclip TOPS ->
@@ -26,24 +25,21 @@ block; not routed to fibre I/O or bias pads.
 from __future__ import annotations
 
 import picasso as fw
-from luqia_ln200.cells.bends import lbend_rib_sm_800nm, lbend_rib_sm_800nm_tight
+from luqia_ln200.cells.bends import lbend_rib_sm_800nm
 from luqia_ln200.cells.couplers import (
     gratingcoupler_alignment_rib_sm_800nm_ext,
     gratingcoupler_rib_sm_800nm_ext,
 )
-from luqia_ln200.cells.dc import bondpad_for_test_top, heater_cr
+from luqia_ln200.cells.dc import bondpad_for_test_top
+from luqia_ln200.cells.modulators import paperclip_tops_rib_sm_800nm
 from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord
-from picasso.leaves import make_array, make_paperclip, make_straight
+from picasso.leaves import make_array, make_straight
 from picasso.recipe import recipe
 
 from ..parameters import parameters as _p
 
-# Fold-count sweep: paperclip arm counts (odd, >= 3 -- make_paperclip needs >= 2).
+# Fold-count sweep: paperclip arm counts (odd, >= 3).
 _NUM_ARMS: tuple[int, ...] = (3, 5, 7)
-
-# Paperclip arm overhang past the heater active length, per side (um) -- matches
-# the PDK paperclip_tops so the ladder sits clear of the bulging return loops.
-_PC_ARM_MARGIN = 10.0
 # Top-arm riser vertical straight = paperclip height minus this (um). The two
 # L-bends already add ~100 um of rise, so the arm needn't lift by the full
 # paperclip height to clear the reference arm below.
@@ -80,45 +76,12 @@ def _straight(length: float) -> fw.Component:
     return make_straight(length=length, cross_section="rib_sm_800nm")
 
 
-@recipe
 def _paperclip_tops(num_arms: int) -> fw.Component:
-    """Paperclip TOPS with ``num_arms`` folded arms + a centred default Cr heater.
+    """The PDK paperclip TOPS at ``num_arms`` folds (default heater / arm length).
 
-    Composes ``make_paperclip`` (the PDK paperclip_rib fixes num_arms=3) with a
-    centred ``heater_cr`` -- the folded sibling of ``tops``. Ports: ``o1``/``o2``
-    (WG west/east) and ``e1``/``e2`` (heater terminals, north).
+    Ports: ``o1``/``o2`` (WG west/east) and ``e1``/``e2`` (heater terminals).
     """
-    heater = heater_cr()
-    hlen = heater.parameters.active_length_um.value
-    arm_len = hlen + 2.0 * _PC_ARM_MARGIN
-    pc = make_paperclip(
-        "rib_sm_800nm",
-        bend=lbend_rib_sm_800nm_tight(),
-        arm_length=arm_len,
-        arm_spacing=6.0,
-        num_arms=num_arms,
-    )
-    cell = fw.Component()
-    pi = cell.add_placed(pc, name="pc")
-    bb = pi.bbox
-    assert bb is not None
-    hi = cell.add_placed(heater, name="heater", x=bb.center_x - hlen / 2.0, y=bb.center_y)
-    cell.add_port("o1", (pi.name, "o1"))
-    cell.add_port("o2", (pi.name, "o2"))
-    cell.add_port("e1", (hi.name, "e1"))
-    cell.add_port("e2", (hi.name, "e2"))
-    cell.cell_type = "phase_shifter"
-    cell.description = (
-        f"Paperclip thermo-optic phase shifter ({num_arms}-arm folded WG + Cr "
-        "ladder heater) on the 800 nm SM rib."
-    )
-    cell.calibration_status = "PLACEHOLDER"
-    cell.parameters.mechanism = "thermo_optic"
-    cell.parameters.topology = "paperclip"
-    cell.parameters.num_arms = num_arms
-    cell.parameters.heater_resistance_ohm = heater.parameters.resistance_ohm.value
-    cell.parameters.heater_active_length_um = hlen
-    return cell
+    return paperclip_tops_rib_sm_800nm(num_arms=num_arms)
 
 
 @recipe
@@ -288,19 +251,18 @@ def add_paperclip_signal_routes(cell: fw.Component) -> None:
     heater, so each gets its own pad: ``paperclip_dc_pad_1..3``, landing on their
     north faces.
 
-    A **single** autoroute: all three ``e1`` terminals sit on one vertical line
-    (every MZI carries the same default ``heater_cr``, centred on its paperclip,
-    and the MZIs are themselves centred on the GC array), which is what a bundle
-    needs -- and they end on three distinct pads, so there is a real corridor to
-    collapse into.
+    **One bundle, not three individual routes.** These lines must be planned
+    together -- routed independently they know nothing about each other and their
+    metal overlaps (the union of their footprints looks identical, but the lanes
+    themselves short). The bundle holds the lanes apart at the spec's lane pitch.
 
     Lane order: the lines leave west and turn **south** to the pads -- a left turn,
     so the lane on the outside (northmost) stays outside and lands westmost.
     Pairing the sources top-down against the pads west-to-east therefore keeps the
     three lanes from crossing.
 
-    ``grid_astar`` rather than the default ``vgraph_rect``, matching the heater_cr
-    block's equivalent bundle.
+    ``vgraph_euclid`` + ``fan_out``, matching the heater_cr block's equivalent
+    bundle; ``fan_out`` absorbs the reversal the planner otherwise rejects.
 
     The pads' north face is the port named ``"e"``: the pads are placed
     ``rotation=90``, which rotates the port poses but not their names.
@@ -311,12 +273,13 @@ def add_paperclip_signal_routes(cell: fw.Component) -> None:
             (f"paperclip_dc_pad_{i}", "e") for i in range(1, len(_NUM_ARMS) + 1)
         ],  # west -> east
         spec=_DC_SPEC,
-        strategy="grid_astar",
-        step=50.0,
+        strategy="vgraph_euclid",
+        fan_out=True,
         # DC metal may run over the cells it wires -- the terminals sit inside the
         # MZI bodies and there is no clear lane out otherwise.
         avoid_port_owners=False,
         name="paperclip_sig",
+        end_straight=50.0
     )
 
 
