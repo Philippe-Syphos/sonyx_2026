@@ -60,12 +60,11 @@ _TOP_OUT_STRAIGHT = 140.0
 _REF_RISER_MARGIN = 40.0
 
 # Placement: three MZIs stacked, right of the heater_cr block (its DC pads end
-# ~x -2088). Devices are left-aligned by their input port and extend up + east.
-_INPUT_X = -1800.0
+# ~x -2088). Anchor x for the whole block -- the GC array, alignment loop and DC
+# pads all key off it, and the MZIs are centred on the array, so moving this one
+# value slides the entire set east/west without disturbing the centring.
+_INPUT_X = -800.0
 _ROW_PITCH = 280.0  # vertical centre-to-centre of stacked MZIs
-# Eastward shift (um) of the three TOPS devices only -- the GC array, alignment
-# loop and DC pads stay anchored at _INPUT_X.
-_MZI_EAST_SHIFT = 1100.0
 
 # Grating-coupler array (north of the block) + left alignment loop, and DC bond
 # pads (below the block). One in + one out coupler per MZI.
@@ -73,6 +72,8 @@ _GC_PER_MZI = 2
 _TOP_MARGIN = 40.0  # coupler/loop tops below the top inner edge
 _GC_TO_BLOCK_GAP = 60.0  # from the GC array bottom down to the top device's top
 _NUM_DC_PADS = 4
+# Routing spec for the heater bias / ground metal (see luqia_ln200.tech.routing_specs).
+_DC_SPEC = "routing_top_metal"
 
 
 def _straight(length: float) -> fw.Component:
@@ -239,15 +240,22 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
     """Place the paperclip-TOPS test block, right of the heater_cr block.
 
     A GC array + left alignment loop (north), the 3 paperclip-TOPS MZIs
-    (num_arms 3/5/7) stacked below it, and 4 DC bond pads below those. Devices
-    are left-aligned by their input port at ``_INPUT_X`` shifted east by
-    ``_MZI_EAST_SHIFT``; the couplers and pads stay at ``_INPUT_X``.
+    (num_arms 3/5/7) stacked below it, and 4 DC bond pads below those. Each MZI is
+    **centred in x on the grating-coupler array** (the alignment loop west of it is
+    excluded from that centre), so the three devices -- which differ in width with
+    num_arms -- sit symmetrically under their couplers instead of being
+    left-aligned. The couplers and pads stay anchored at ``_INPUT_X``.
     Placement-only.
     """
     half_h = _p.die_height.value / 2.0
     kw = _p.keepout_width.value
 
     gc_bottom = _add_gc_array(cell, y_top=(half_h - kw) - _TOP_MARGIN)
+    # Centre of the coupler array alone -- paperclip_gc_align (the alignment loop)
+    # sits to its west and is deliberately not part of this centre.
+    arr_bb = cell.instances["paperclip_gc_array"].bbox
+    assert arr_bb is not None  # placed instances always have geometry
+    array_cx = arr_bb.center_x
 
     # MZIs: top device's top a fixed gap below the GC array; stack downward.
     y_block_top = gc_bottom - _GC_TO_BLOCK_GAP
@@ -262,9 +270,72 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
         cell.add_placed(
             mzi,
             name=f"paperclip_mzi_N{n}",
-            x=(_INPUT_X + _MZI_EAST_SHIFT) - o1[0],
+            x=array_cx - b.center_x,
             y=y_input - o1[1],
         )
 
     # DC pads on the same row as the heater_cr block's pads (left cells).
     _add_dc_pads(cell)
+    # Heater wiring, same configuration as the neighbouring heater_cr block.
+    add_paperclip_signal_routes(cell)
+    add_paperclip_ground_routes(cell)
+
+
+def add_paperclip_signal_routes(cell: fw.Component) -> None:
+    """Route the paperclip TOPS west heater terminals to the three west-most pads.
+
+    Each MZI's ``e1`` terminal is the driven **signal** side of its paperclip
+    heater, so each gets its own pad: ``paperclip_dc_pad_1..3``, landing on their
+    north faces.
+
+    A **single** autoroute: all three ``e1`` terminals sit on one vertical line
+    (every MZI carries the same default ``heater_cr``, centred on its paperclip,
+    and the MZIs are themselves centred on the GC array), which is what a bundle
+    needs -- and they end on three distinct pads, so there is a real corridor to
+    collapse into.
+
+    Lane order: the lines leave west and turn **south** to the pads -- a left turn,
+    so the lane on the outside (northmost) stays outside and lands westmost.
+    Pairing the sources top-down against the pads west-to-east therefore keeps the
+    three lanes from crossing.
+
+    ``grid_astar`` rather than the default ``vgraph_rect``, matching the heater_cr
+    block's equivalent bundle.
+
+    The pads' north face is the port named ``"e"``: the pads are placed
+    ``rotation=90``, which rotates the port poses but not their names.
+    """
+    cell.autoroute(
+        ports_a=[(f"paperclip_mzi_N{n}", "e1") for n in _NUM_ARMS],  # top -> bottom
+        ports_b=[
+            (f"paperclip_dc_pad_{i}", "e") for i in range(1, len(_NUM_ARMS) + 1)
+        ],  # west -> east
+        spec=_DC_SPEC,
+        strategy="grid_astar",
+        step=50.0,
+        # DC metal may run over the cells it wires -- the terminals sit inside the
+        # MZI bodies and there is no clear lane out otherwise.
+        avoid_port_owners=False,
+        name="paperclip_sig",
+    )
+
+
+def add_paperclip_ground_routes(cell: fw.Component) -> None:
+    """Tie the paperclip TOPS east heater terminals to the last DC pad (ground).
+
+    Each MZI's ``e2`` terminal is the heaters' **common ground**, so all three drop
+    onto the *same* pad -- ``paperclip_dc_pad_4``, east of the three signal pads --
+    landing on its north face.
+
+    **One autoroute per line, not a bundle**: every line ends on the same port, so
+    there is nothing for a bundle to collapse onto.
+    """
+    gnd_pad = (f"paperclip_dc_pad_{_NUM_DC_PADS}", "e")  # north face
+    for n in _NUM_ARMS:
+        cell.autoroute(
+            ports_a=[(f"paperclip_mzi_N{n}", "e2")],
+            ports_b=[gnd_pad],
+            spec=_DC_SPEC,
+            avoid_port_owners=False,
+            name=f"paperclip_gnd_N{n}",
+        )

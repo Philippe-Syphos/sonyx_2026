@@ -54,8 +54,10 @@ _NUM_MZI = len(_HEATER_SECTIONS)
 
 # Gaps (um) from the die inner edges (past the 50 um keepout) to the GC array:
 # the alignment loop's left edge sits _LEFT_MARGIN off the left inner edge, and
-# the coupler/loop tops sit _TOP_MARGIN below the top inner edge.
-_LEFT_MARGIN = 250.0
+# the coupler/loop tops sit _TOP_MARGIN below the top inner edge. Both coupler
+# groups, both MZI columns and the DC pad row key off _LEFT_MARGIN, so it is the
+# single knob that slides the whole block east/west.
+_LEFT_MARGIN = 1250.0
 _TOP_MARGIN = 40.0
 
 # MZI columns (below the GC array). The couplers + MZIs split into two
@@ -64,6 +66,9 @@ _TOP_MARGIN = 40.0
 # MZI half routes locally up to its own coupler half. The right group is pushed
 # _RIGHT_BLOCK_GAP beyond the pitch-continuous position to separate the two.
 _RIGHT_BLOCK_GAP = 150.0  # extra x-separation of the right group from the left
+# Extra eastward offset (um) of the east MZI column only, on top of the pin to its
+# group's first real coupler (the couplers and pads do not move).
+_EAST_COLUMN_SHIFT = 350.0
 # Top MZI axis (both columns) below the top inner edge; deep enough to leave
 # routing room between the coupler line and the MZIs.
 _MZI_TOP_DROP = 400.0
@@ -245,18 +250,29 @@ def _add_devices(cell: fw.Component) -> None:
     The MZIs split into two columns matching the coupler halves: the first
     ``_NUM_MZI // 2`` (shorter heaters) form the left column under the left
     coupler group, the rest the right column under the right coupler group. Each
-    column stacks downward at ``_MZI_ROW_PITCH`` from the same top axis, its
-    inputs aligned to its group's left edge (see :func:`_gc_group_left_edges`).
-    Instances ``heater_mzi_M{M}``; placement-only.
+    column stacks downward at ``_MZI_ROW_PITCH`` from the same top axis.
+
+    Each column's **west edge is pinned to its group's first real grating coupler**
+    -- the first one that is not the fibre-alignment loop. The loop is two couplers
+    wide, so that is the third coupler slot of the group and the ``c0`` port of the
+    group's array. The MZI's ``o1`` (its westmost point) lands on that coupler's x,
+    so the input drops straight down from it. The east column is then offset a
+    further ``_EAST_COLUMN_SHIFT`` east. Instances ``heater_mzi_M{M}``.
+
+    Must run after :func:`_add_gc_array` -- it reads the placed coupler arrays.
     """
     half_h = _p.die_height.value / 2.0
     kw = _p.keepout_width.value
     y_axis0 = (half_h - kw) - _MZI_TOP_DROP
-    left_x, right_x = _gc_group_left_edges()
 
     split = _NUM_MZI // 2
-    columns = ((left_x, _HEATER_SECTIONS[:split]), (right_x, _HEATER_SECTIONS[split:]))
-    for x_in, sections in columns:
+    columns = (
+        ("heater_mzi_gc_array_l", _HEATER_SECTIONS[:split], 0.0),
+        ("heater_mzi_gc_array_r", _HEATER_SECTIONS[split:], _EAST_COLUMN_SHIFT),
+    )
+    for array_name, sections, shift in columns:
+        # First non-alignment coupler of this group = the array's c0 port.
+        x_in = cell.instances[array_name].ports["o1_r0_c0"].position[0] + shift
         for i, m in enumerate(sections):
             mzi = _balanced_mzi_tops(m)
             # o1 (input) sits at local (0, 0); place it directly at (x_in, y_axis).
@@ -288,13 +304,100 @@ def _add_dc_pads(cell: fw.Component) -> None:
         )
 
 
+# Pad allocation per MZI column: three signal pads then one shared ground pad, so
+# the west column takes dc_pad_1..4 and the east column dc_pad_5..8.
+_PADS_PER_COLUMN = 4
+
+
+def _column_mzis(column: int) -> list[str]:
+    """Instance names of ``column``'s MZIs, **top to bottom** (0 = west, 1 = east)."""
+    split = _NUM_MZI // 2
+    sections = _HEATER_SECTIONS[:split] if column == 0 else _HEATER_SECTIONS[split:]
+    return [f"heater_mzi_M{m}" for m in sections]
+
+
+def add_heater_mzi_signal_routes(cell: fw.Component, column: int) -> None:
+    """Route one column's west heater terminals to its three signal pads.
+
+    A column's ``e1`` terminals are the driven **signal** side of each Cr ladder
+    heater, so each gets its own pad: the first three of that column's four
+    (``dc_pad_1..3`` west, ``dc_pad_5..7`` east), landing on their north faces.
+
+    A **single** autoroute: the ``e1`` terminals all sit on one vertical line (x is
+    set by the column, not by the swept heater length), which is what a bundle
+    needs -- and they end on three distinct pads 400 um apart, so there is a real
+    corridor to collapse into. The ``e2`` terminals could not be bundled: the heater
+    length is what the sweep varies, so they are not co-linear.
+
+    Lane order: the lines leave west and turn **south** to the pads -- a left turn,
+    so the lane on the outside (northmost) stays outside and lands westmost.
+    Pairing the sources top-down against the pads west-to-east therefore keeps the
+    three lanes from crossing.
+
+    ``grid_astar`` rather than the default ``vgraph_rect``, which finds no path to
+    the goal gateway for this bundle.
+
+    The pads' north face is the port named ``"e"``: the pads are placed
+    ``rotation=90``, which rotates the port poses but not their names.
+    """
+    mzis = _column_mzis(column)  # top -> bottom
+    first_pad = column * _PADS_PER_COLUMN + 1
+    cell.autoroute(
+        ports_a=[(name, "e1") for name in mzis],
+        ports_b=[(f"dc_pad_{first_pad + k}", "e") for k in range(len(mzis))],  # west->east
+        spec="routing_top_metal",
+        strategy="grid_astar",
+        # step=10 makes the A* grid ~20x more expensive here (the grid scales
+        # O(N^2) with the search-area side) for the same resulting path: 25 um
+        # plans this bundle in ~90 ms instead of ~1.7 s, bbox unchanged.
+        step=25.0,
+        # DC metal may run over the cells it wires -- the terminals sit inside the
+        # MZI bodies and there is no clear lane out otherwise.
+        avoid_port_owners=False,
+        name=f"heater_mzi_sig_{'west' if column == 0 else 'east'}",
+    )
+
+
+def add_heater_mzi_ground_routes(cell: fw.Component, column: int) -> None:
+    """Tie one column's east heater terminals to that column's ground pad.
+
+    A column's ``e2`` terminals are the heaters' **common ground**, so all three
+    drop onto the *same* pad -- the last of that column's four (``dc_pad_4`` west,
+    ``dc_pad_8`` east) -- landing on its north face.
+
+    **One autoroute per line, not a bundle**, for two reasons: every line ends on
+    the same port, so there is nothing for a bundle to collapse onto; and the ``e2``
+    terminals are not co-linear (the heater length is what the sweep varies, so each
+    MZI's east terminal sits at a different x), which a bundle requires.
+    """
+    mzis = _column_mzis(column)
+    gnd_pad = (f"dc_pad_{(column + 1) * _PADS_PER_COLUMN}", "e")  # north face
+    side = "west" if column == 0 else "east"
+    for mzi_name in mzis:
+        cell.autoroute(
+            ports_a=[(mzi_name, "e2")],
+            ports_b=[gnd_pad],
+            spec="routing_top_metal",
+            avoid_port_owners=False,
+            name=f"heater_mzi_gnd_{side}_{mzi_name.removeprefix('heater_mzi_')}",
+        )
+
+
 def add_heater_mzi_sweep(cell: fw.Component) -> None:
     """Place the thermo-optic phase-shifter length sweep, top-left of the die.
 
     The top-left GC array + alignment loops, the ``_NUM_MZI`` balanced 1x2-MMI
     MZIs (two columns) with swept heater length, and a row of DC heater-bias test
-    bond pads below them. Placement-only -- nothing is routed.
+    bond pads below them, then each column's heater wiring: the three ``e1``
+    signals to that column's three signal pads
+    (:func:`add_heater_mzi_signal_routes`) and the three ``e2`` terminals tied to
+    its shared ground pad (:func:`add_heater_mzi_ground_routes`) -- west column on
+    ``dc_pad_1..4``, east column on ``dc_pad_5..8``. The optical I/O is still
+    unrouted.
     """
     _add_gc_array(cell)
     _add_devices(cell)
     _add_dc_pads(cell)
+    for column in (0, 1):  # 0 = west, 1 = east
+        add_heater_mzi_signal_routes(cell, column)
+        add_heater_mzi_ground_routes(cell, column)

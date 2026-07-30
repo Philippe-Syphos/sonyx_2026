@@ -11,6 +11,8 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..dc_routing import add_dc_pad_routes
+from ..gsg_termination_sweep import add_gsg_termination_sweep
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
@@ -139,6 +141,13 @@ def die_r2b() -> fw.Component:
     # standard cutback slot (x-flipped, top-right band) -- same relative position
     # and orientation as the ULL cutback on R3A.
     place_cutback_top_right(cell, test_waveguide_cutback_sm(), "test_waveguide_cutback_sm")
+    # GSG termination-resistance sweep (7 probeable lumped-terminator DUTs,
+    # 25-75 ohm + nominal 50 ohm) in a single row along the top-left edge.
+    # Moved here from R1A.
+    add_gsg_termination_sweep(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
+    # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
+    # (pads 0-3 bias, remaining pads strapped as the common ground land).
+    add_dc_pad_routes(cell)
     return cell

@@ -12,6 +12,7 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..crossing_cutback import add_crossing_cutbacks
+from ..dc_routing import add_dc_pad_routes
 from ..racetrack_sweep import add_racetrack_sweep
 from ._frame import die_scaffold
 from ._head_coupler_block import (
@@ -135,4 +136,7 @@ def die_r2a() -> fw.Component:
     add_crossing_cutbacks(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
+    # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
+    # (pads 0-3 bias, remaining pads strapped as the common ground land).
+    add_dc_pad_routes(cell)
     return cell

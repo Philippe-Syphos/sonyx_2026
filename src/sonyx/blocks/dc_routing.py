@@ -37,39 +37,108 @@ _DC_STRATEGY = "vgraph_rect"
 
 _PAD_ARRAY = "bondpads"
 
+# Pads 0..3 carry the modulator head's four independent bias lines; every pad
+# above them is strapped together as the common ground land.
+_NUM_BIAS_PADS = 4
 
-def dc_pad_port(cell: fw.Component, index: int, pad_array: str = _PAD_ARRAY) -> PortSpec:
-    """``(instance, port)`` for the **west** face of DC bond pad ``index``.
+
+# Physical face -> outward port orientation (deg). Names are the *physical*
+# directions, which is why they are resolved by angle: see the module docstring
+# on the rotation=90 port-naming quirk.
+_FACE_ORIENTATION = {"east": 0.0, "north": 90.0, "west": 180.0, "south": 270.0}
+
+
+def dc_pad_count(cell: fw.Component, pad_array: str = _PAD_ARRAY) -> int:
+    """Number of pads in ``pad_array`` (counted by their west faces)."""
+    pads = cell.instances[pad_array]
+    return sum(
+        1 for name in pads.ports if abs(pads.ports[name].orientation - 180.0) < 1e-6
+    )
+
+
+def _require_vertical_stack(cell: fw.Component, pad_array: str = _PAD_ARRAY) -> None:
+    """Raise unless ``pad_array`` is a vertical (``rotation=90``) pad stack.
+
+    The bottom-up pad numbering and the north/south ground straps both assume the
+    pads are stacked in y at a common x. R1A places its array with
+    ``bondpad_rotation=0``, i.e. a horizontal row -- numbering and straps would
+    both be wrong there, so fail loudly instead of mis-routing.
+    """
+    pads = cell.instances[pad_array]
+    xs = [
+        pads.ports[name].position[0]
+        for name in pads.ports
+        if abs(pads.ports[name].orientation - 180.0) < 1e-6
+    ]
+    if len(xs) > 1 and max(xs) - min(xs) > 1e-6:
+        raise ValueError(
+            f"{pad_array!r} is a horizontal pad row (west faces span "
+            f"x={min(xs):.1f}..{max(xs):.1f}), but the DC scheme assumes a vertical "
+            "stack (bottom-up numbering, north/south straps). Dies placed with "
+            "bondpad_rotation=0 (R1A) need the horizontal variant."
+        )
+
+
+def dc_pad_port(
+    cell: fw.Component,
+    index: int,
+    face: str = "west",
+    pad_array: str = _PAD_ARRAY,
+) -> PortSpec:
+    """``(instance, port)`` for one physical ``face`` of DC bond pad ``index``.
 
     Pads are numbered from the bottom of the array up: ``index=0`` is the
-    bottom-most pad. Selection is by port orientation (180° = facing west), so
-    it is immune to the array-rotation port-naming quirk described in the module
-    docstring.
+    bottom-most pad. Selection is by port orientation, so it is immune to the
+    array-rotation port-naming quirk described in the module docstring.
 
     Args:
         cell: die cell carrying the bond-pad array.
         index: pad number, 0 = bottom-most.
+        face: which physical pad edge to land on -- ``"west"`` (default, the
+            face looking back into the die) / ``"north"`` / ``"east"`` /
+            ``"south"``. The N/S faces are what the pad-to-pad ground straps
+            use, so they stay off the west faces the bias lines land on.
         pad_array: instance name of the bond-pad array.
 
     Raises:
+        KeyError: if ``face`` is not one of the four cardinal names.
         IndexError: if ``index`` is past the last pad in the array.
     """
+    orientation = _FACE_ORIENTATION[face]
     pads = cell.instances[pad_array]
-    west = [
+    matches = [
         (pads.ports[name].position[1], name)
         for name in sorted(pads.ports)
-        if abs(pads.ports[name].orientation - 180.0) < 1e-6
+        if abs(pads.ports[name].orientation - orientation) < 1e-6
     ]
-    west.sort()  # bottom-up
-    if not 0 <= index < len(west):
+    matches.sort()  # bottom-up
+    if not 0 <= index < len(matches):
         raise IndexError(
-            f"DC pad {index} out of range: {pad_array!r} exposes {len(west)} west-facing pads"
+            f"DC pad {index} out of range: {pad_array!r} exposes "
+            f"{len(matches)} pads with a {face} face"
         )
-    return (pad_array, west[index][1])
+    return (pad_array, matches[index][1])
 
 
-def add_dc_pad_routes(cell: fw.Component) -> None:
-    """Route R4A's DC bias lines from on-die terminals to the bond pads.
+def add_dc_pad_routes(cell: fw.Component, second_head: str | None = None) -> None:
+    """Route a die's ``test_modulator_head`` DC bias lines to its bond pads.
+
+    Applies uniformly to every die whose pad array is a **vertical stack**
+    (``bondpad_rotation=90``, the default) -- R1B, R2A, R2B, R3A, R3B, R4A, R4B.
+    R1A's horizontal row is rejected by :func:`_require_vertical_stack`; it needs
+    its own variant.
+
+    The **primary** ``test_modulator_head`` gets the full four-line bias map.
+    ``second_head`` names a die's second head (R3A/R3B: ``test_modulator_head_2``)
+    and grounds *just* its two east bias terminals onto the same top pad -- its
+    four independent bias lines are still to do, as is R1A/R1B's mirrored
+    ``test_modulator_head_top2``.
+
+    Args:
+        cell: die cell carrying ``test_modulator_head`` and the pad array.
+        second_head: instance name of a second modulator head whose two
+            east-facing bias terminals join the common ground. ``None`` (default)
+            wires the primary head only.
 
     Lines, each landing on its pad's west face:
 
@@ -77,34 +146,125 @@ def add_dc_pad_routes(cell: fw.Component) -> None:
       ``test_modulator_head`` (``e_coupler_1``, the split-ratio heater).
     - **pad 1** <- the same coupler heater's **east / signal** terminal
       (``e_coupler_2``), the driven side of that heater.
-    - **pad 6** (top-most) <- the modulator head's **two east-most** terminals
+    - **pads 2 + 3** <- the two **west-facing** bias terminals
+      (``e_phase2_1`` -> pad 2, ``e_phase_1`` -> pad 3) as a **single autoroute
+      call** (one 2-lane bundle). Paired lower-source-to-lower-pad so the two
+      lanes don't cross.
+    - **top-most pad** <- the modulator head's **two east-most** terminals
       (``e_phase_2`` + ``e_phase2_2``, the outer ends of the two TOPS phase
       shifters), tied together as a **common ground**.
+    - **every pad above the bias four** is strapped into that ground, so the
+      ground land scales with the array: pads 4/5/6 on the 7-pad dies, 4/5/6/7 on
+      R3A's 8-pad array.
+    - **top-most pad** also <- ``second_head``'s two east bias terminals, when a
+      second head is given (R3A/R3B).
 
-    Placement is additive -- one named route instance per bias line, so lines
-    can be added one at a time as the pad map fills in. A line may carry several
-    source ports, which then share one pad (a common node).
+    Each line is its **own explicit** ``autoroute`` call (deliberately not
+    looped) so per-call knobs -- ``strategy``, ``start_straight`` /
+    ``end_straight``, ``bbox_margin``, ``bundle_keepout_factor``, ``fan_in`` /
+    ``fan_out``, obstacle sources -- can be tuned line by line without touching
+    the others. ``_DC_SPEC`` / ``_DC_STRATEGY`` are the shared defaults; override
+    them inline on any single call.
+
+    ``avoid_port_owners=False`` throughout: DC metal is allowed to run over the
+    cells it wires, since the terminals sit inside dense optical blocks with no
+    clear lane out.
     """
-    # (source ports, pad index, route name)
-    lines: list[tuple[list[tuple[str, str]], int, str]] = [
-        ([("test_modulator_head", "e_coupler_1")], 0, "dc_bias_head_coupler"),
-        ([("test_modulator_head", "e_coupler_2")], 1, "dc_bias_head_coupler_signal"),
-        # Common ground: both TOPS outer terminals onto one pad.
-        (
-            [("test_modulator_head", "e_phase_2"), ("test_modulator_head", "e_phase2_2")],
-            6,
-            "dc_gnd_head_tops",
-        ),
+    _require_vertical_stack(cell)
+    head = "test_modulator_head"
+    # Bias pads: 0-3 for the primary head. A second head adds its two west bias
+    # terminals on pads 4-5, pushing the ground land up by two. Everything above
+    # the bias pads is strapped together as ground, with the top-most pad the
+    # landing for the heads' east ground terminals.
+    num_bias_pads = _NUM_BIAS_PADS + (2 if second_head is not None else 0)
+    num_pads = dc_pad_count(cell)
+    gnd_pads = list(range(num_bias_pads, num_pads))
+    gnd_top = num_pads - 1
+
+    # Tunable-coupler heater, west-most terminal -> pad 0 (bottom-most).
+    cell.autoroute(
+        ports_a=[(head, "e_coupler_1")],
+        ports_b=[dc_pad_port(cell, 0)],
+        spec=_DC_SPEC,
+        strategy=_DC_STRATEGY,
+        avoid_port_owners=False,
+        name="dc_bias_head_coupler",
+    )
+
+    # Same coupler heater, east / signal terminal -> pad 1.
+    cell.autoroute(
+        ports_a=[(head, "e_coupler_2")],
+        ports_b=[dc_pad_port(cell, 1)],
+        spec=_DC_SPEC,
+        strategy=_DC_STRATEGY,
+        avoid_port_owners=False,
+        name="dc_bias_head_coupler_signal",
+        end_straight=850.0
+    )
+
+    # West-facing bias terminals, one bundle. Primary head -> pads 2/3 (paired
+    # lower-source-to-lower-pad). With a second head its two west bias terminals
+    # join the same bundle on pads 4/5 -- note the second head sits *below* the
+    # primary while pads 4/5 sit *above* pads 2/3, so those two pairs run as
+    # groups that swap order; the planner sorts the lanes out inside the bundle.
+    phase_west: list[tuple[tuple[str, str], int]] = [
+        ((head, "e_phase2_1"), 2),  # lower source -> lower pad
+        ((head, "e_phase_1"), 3),  # upper source -> upper pad
     ]
-    for src_ports, pad_index, route_name in lines:
-        pad = dc_pad_port(cell, pad_index)
+    if second_head is not None:
+        phase_west += [
+            ((second_head, "e_phase2_1"), 4),
+            ((second_head, "e_phase_1"), 5),
+        ]
+    cell.autoroute(
+        ports_a=[port for port, _ in phase_west],
+        ports_b=[dc_pad_port(cell, pad) for _, pad in phase_west],
+        spec=_DC_SPEC,
+        strategy=_DC_STRATEGY,
+        avoid_port_owners=False,
+        name="dc_bias_head_phase_west",
+    )
+
+    # Common ground: both TOPS outer (east) terminals tied onto the top-most pad.
+    cell.autoroute(
+        ports_a=[(head, "e_phase_2"), (head, "e_phase2_2")],
+        ports_b=[dc_pad_port(cell, gnd_top), dc_pad_port(cell, gnd_top)],
+        spec=_DC_SPEC,
+        strategy=_DC_STRATEGY,
+        avoid_port_owners=False,
+        name="dc_gnd_head_tops",
+    )
+
+    # Second head (R3A/R3B): its two east bias terminals join the same top-pad
+    # ground. Kept as its own call rather than four lanes in the one above -- the
+    # two heads sit ~750 um apart in y, so bundling them would fan across that
+    # whole gap, and this way each head's ground can be tuned on its own.
+    if second_head is not None:
         cell.autoroute(
-            ports_a=list(src_ports),
-            ports_b=[pad] * len(src_ports),
+            ports_a=[(second_head, "e_phase_2"), (second_head, "e_phase2_2")],
+            ports_b=[dc_pad_port(cell, gnd_top), dc_pad_port(cell, gnd_top)],
             spec=_DC_SPEC,
             strategy=_DC_STRATEGY,
-            # DC metal is allowed to run over the cells it wires -- the terminals
-            # sit inside dense optical blocks and there is no lane out otherwise.
             avoid_port_owners=False,
-            name=route_name,
+            name="dc_gnd_head2_tops",
+        )
+
+    # Ground strap: every otherwise-unused pad chained up into the top-pad ground
+    # (4 -> 5 -> 6 [-> 7 on R3A]), so the top pads form one contiguous ground land
+    # and a wirebond can go down on any of them.
+    #
+    # This has to be its own autoroute call: a bundle requires every lane to
+    # share an outward heading, and the head's ground terminals above face east
+    # (0°) while these pad-to-pad straps face north (90°). All strap lanes do
+    # share 90°, so they ride together here. The straps use the pads' north/south
+    # faces -- the shortest hop between stacked neighbours, and it leaves every
+    # west face free for the bias lines.
+    if len(gnd_pads) > 1:
+        cell.autoroute(
+            ports_a=[dc_pad_port(cell, i, "north") for i in gnd_pads[:-1]],
+            ports_b=[dc_pad_port(cell, i + 1, "south") for i in gnd_pads[:-1]],
+            spec=_DC_SPEC,
+            strategy=_DC_STRATEGY,
+            avoid_port_owners=False,
+            name="dc_gnd_pad_strap",
         )

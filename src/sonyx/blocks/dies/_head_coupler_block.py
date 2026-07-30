@@ -14,12 +14,12 @@ from picasso.component import PortSpec
 from picasso.routing import ObstacleSet
 from picasso.routing.obstacles import route_polygons_for_child
 
-from ._frame import place_thermistance_over_top_rf_pads
+from ._frame import place_thermistance_pad
 
 # Input block (modulator_head + one directional coupler below it), anchored to
 # the outer (east) edge of the lower input GSG pad group (rf_pads_bot_in.e2).
 _HEAD_SHIFT_X = -500.0  # um, block right edge vs the pad's east edge (+x = right)
-_HEAD_SHIFT_Y = 300.0  # um, head top below the pad centreline (+ = further down)
+_HEAD_SHIFT_Y = 550.0  # um, head top below the pad centreline (+ = further down)
 _HEAD_DC_SPACING = 60.0  # um, vertical gap between the head and the DC below it
 
 # Output-side directional couplers: one above each modulator, anchored to that
@@ -345,7 +345,6 @@ def add_head_and_couplers(
             x=(ax + _OUT_DC_SHIFT_X) - odb.xmin,
             y=(ay + _OUT_DC_SHIFT_Y) - odb.center_y,
         )
-    # The die's RF launch chain is complete by the time this helper runs, so this
-    # is the shared hook where the scaffold's parked thermistance bonding pad gets
-    # re-placed above the top modulator's east GSG pads (no-op on R1A).
-    place_thermistance_over_top_rf_pads(cell)
+    # Shared hook (every die calls this helper): move the scaffold's parked
+    # thermistance bonding pad onto its hard-coded per-die centre.
+    place_thermistance_pad(cell)

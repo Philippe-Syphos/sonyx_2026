@@ -12,7 +12,6 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..gc_test_array import add_open_gc_array
-from ..gsg_termination_sweep import add_gsg_termination_sweep
 from ..reflectometry import add_reflectometry_cell
 from ._frame import die_scaffold
 from ._head_coupler_block import (
@@ -23,6 +22,10 @@ from ._head_coupler_block import (
     add_mzm_output_routes,
     add_top_head_and_coupler,
 )
+
+# Top-edge inset (um) of row 1's third electrode, the one descending from the
+# top edge. Row-1 specific -- the other dies carry only the bottom pair.
+_TOP2_EDGE_INSET = 1250.0
 
 
 def die_r1a() -> fw.Component:
@@ -39,19 +42,19 @@ def die_r1a() -> fw.Component:
     )
     mb = modulator.bbox
     x0 = -mb.center_x  # centre the electrode in x
-    # Row 1 uses a 1250 um shift (rows 2-4 use the 2 mm
-    # gsg_modulator_vertical_shift default): the full 2 mm shift would collide
-    # R1A's two mirror pairs, which the four-electrode stack has no room for.
-    _mod_shift = 1250.0
-    bot_y = -half_h + _mod_shift - mb.ymin
+    # The bottom pair sits on the shared gsg_modulator_vertical_shift (2 mm), the
+    # same as rows 2-4, so row 1's two lower modulators line up with every other
+    # die. (They previously used a local 1250 um shift, from when row 1 carried
+    # two full mirror pairs; the top pair is now split one modulator per die.)
+    bot_y = -half_h + _p.gsg_modulator_vertical_shift.value - mb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
     mod_bot = cell.add_placed(modulator, name="gsg_modulator_bot", x=x0, y=bot_y)
     mod_top = cell.add_placed(modulator, name="gsg_modulator_top", x=x0, y=top_y)
-    # One more electrode descending from the top edge: same vertical shift
-    # (top-edge inset) as the bottom pair takes from the bottom. Its former
+    # One more electrode descending from the top edge, on row 1's own 1250 um
+    # top-edge inset (it has no counterpart on the other dies). Its former
     # mirror-pair partner now lives on R1B -- the two top modulators are split
     # one per die.
-    top2_y = half_h - _mod_shift - mb.ymax
+    top2_y = half_h - _TOP2_EDGE_INSET - mb.ymax
     mod_top_2 = cell.add_placed(modulator, name="gsg_modulator_top_2", x=x0, y=top2_y)
     # RF launch (via -> electrode-to-pads taper -> GSG bondpad triplet, wrapped in
     # one PDK cell) on both electrode ends of every modulator. put() auto-rotates,
@@ -101,9 +104,7 @@ def die_r1a() -> fw.Component:
     # modulator_head (left) + output directional coupler (right) for the extra top
     # modulator, rotated 180 deg vs the standard block, in the band above it.
     add_top_head_and_coupler(cell, "gsg_modulator_top_2")
-    # GSG termination-resistance sweep (7 probeable lumped-terminator DUTs,
-    # 25-75 ohm + nominal 50 ohm) in a single row along the top-left edge.
-    add_gsg_termination_sweep(cell)
+    # (The GSG termination-resistance sweep moved to R2B -- see die_r2b.)
     # Reflectometry cell -- first pass: 4 grating couplers (left alignment loop +
     # 2 open) below the terminators. Reflector/delay path added later.
     add_reflectometry_cell(cell)

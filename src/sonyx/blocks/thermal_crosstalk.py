@@ -134,11 +134,13 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
     )
 
     # Two heater-bias bond pads on the shared DC test-pad row (as on R4B TOPS),
-    # rotated 90 deg (long side N-S). First pad's left edge at x_left.
+    # rotated 90 deg (long side N-S). The pair is **centred** on the heater above
+    # it (which is itself centred on the GC array / MZI stack), so the two bias
+    # routes drop symmetrically instead of running diagonally off to one side.
     pad = bondpad_for_test_top()
     pad_w_rot = pad.bbox.dy
     pad_pitch = pad_w_rot + _p.dc_test_pad_spacing.value
-    x_pad0 = x_left + pad_w_rot / 2.0
+    x_pad0 = heater_cx - pad_pitch / 2.0  # centre of the lower-x pad of the pair
     for i in range(2):
         cell.add_placed(
             pad,
@@ -162,7 +164,10 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
         # avoid_port_owners=True,
         name="thermal_routes",
         strategy="grid_astar",
-        step=10.0
+        step=10.0,
+        # Force a fan-in on the MZI side and pin its landing right, so the
+        # rightmost lane rides straight through the corridor (no staircase bends).
+        fan_out="right",
     )
 
     # Autoroute the MZI outputs (east-facing o2) to the 5 rightmost GCs as a
@@ -181,5 +186,21 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
         name="thermal_routes_out",
         strategy="grid_astar",
         step=10.0,
-        fan_out=True
+        # Fan-out pinned left: the leftmost lane lands straight on its coupler.
+        fan_out="left",
     )
+
+    # Heater bias: each heater terminal up to its own bond pad. Two separate
+    # autoroute calls, not one bundle -- the heater's terminals face opposite ways
+    # (e1 west, e2 east) and a bundle needs every lane to share an outward
+    # heading. e1 takes the lower-x pad, e2 the higher-x one, so the two lines
+    # don't cross. Landing on the pads' north faces (the pads are rotated 90 deg,
+    # so that face is the port named "e").
+    for term, pad_idx in (("e1", 1), ("e2", 2)):
+        cell.autoroute(
+            ports_a=[("thermal_heater", term)],
+            ports_b=[(f"thermal_dc_pad_{pad_idx}", "e")],
+            spec="routing_top_metal",
+            name=f"thermal_heater_bias_{term}",
+            avoid_port_owners=False,
+        )

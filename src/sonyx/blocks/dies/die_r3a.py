@@ -12,6 +12,7 @@ from picasso.component import PortSpec
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..dc_routing import add_dc_pad_routes
 from ..thermal_crosstalk import add_thermal_crosstalk
 from ._frame import die_scaffold
 from ._head_coupler_block import (
@@ -195,4 +196,7 @@ def die_r3a() -> fw.Component:
     add_thermal_crosstalk(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
+    # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
+    # (pads 0-3 bias, remaining pads strapped as the common ground land).
+    add_dc_pad_routes(cell, second_head="test_modulator_head_2")
     return cell

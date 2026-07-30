@@ -11,6 +11,7 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParametersMultimode
 from ...parameters import parameters as _p
+from ..dc_routing import add_dc_pad_routes
 from ..heater_mzi_sweep import add_heater_mzi_sweep
 from ..mzi_ladder import add_mzi_ladder
 from ..paperclip_mzi_sweep import add_paperclip_mzi_sweep
@@ -150,4 +151,7 @@ def die_r4b() -> fw.Component:
     add_paperclip_mzi_sweep(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
+    # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
+    # (pads 0-3 bias, remaining pads strapped as the common ground land).
+    add_dc_pad_routes(cell)
     return cell

@@ -49,10 +49,9 @@ _LABEL_MARGIN = 60.0
 # left, and how far the pad drops below the array bottom.
 _THERMISTANCE_GAP = 300.0
 _THERMISTANCE_DROP = 100.0
-# Clearance (um) from the top modulator's east (input) GSG pad group up to the
-# thermistance bonding pad parked above it -- see
-# :func:`place_thermistance_over_top_rf_pads`.
-_THERMISTANCE_OVER_RF_GAP = 1000.0
+# Hard-coded centre (x, y) in um of the thermistance bonding pad, identical on
+# every die -- see :func:`place_thermistance_pad`.
+_THERMISTANCE_CENTER = (4950.0, 1300.0)
 
 # Gap (um) between the per-die PCM & calibration block's right edge and the
 # thermistance bonding pad it sits next to (docs/pcm_cells.md).
@@ -280,27 +279,21 @@ def die_scaffold(
     return cell
 
 
-def place_thermistance_over_top_rf_pads(
-    cell: fw.Component, pads_instance: str = "rf_pads_top_in"
-) -> None:
-    """Move the scaffold's thermistance pad above the top modulator's east GSG pads.
+def place_thermistance_pad(cell: fw.Component) -> None:
+    """Move the scaffold's thermistance pad onto the shared hard-coded centre.
 
     :func:`die_scaffold` parks ``thermistance_bonding_pad`` next to the bond-pad
-    array (it has to: the scaffold runs before the die lays its RF launch chain,
-    and the PCM block anchors off that parked position). This re-places it once
-    the RF pads exist: centred in x on ``pads_instance`` -- the **east** (input,
-    ``e2``) GSG pad group of the **top** modulator -- with its bottom edge
-    ``_THERMISTANCE_OVER_RF_GAP`` above that group's top edge.
+    array, and the PCM block anchors off that parked position -- so the pad is
+    placed there first and re-placed here rather than being positioned once.
+    This puts it on ``_THERMISTANCE_CENTER``, the same absolute (x, y) on every
+    die, independent of the RF launch or the bond-pad array.
 
-    A no-op on dies lacking either instance (e.g. R1A has no ``rf_pads_top_in``).
+    A no-op on a die with no thermistance pad (one with no bond-pad array).
     """
-    if "thermistance_bonding_pad" not in cell.instances or pads_instance not in cell.instances:
+    if "thermistance_bonding_pad" not in cell.instances:
         return
     therm = cell.instances["thermistance_bonding_pad"]
-    pads = cell.instances[pads_instance]
-    tb, pb = therm.bbox, pads.bbox
-    assert tb is not None and pb is not None  # placed instances always have geometry
-    therm.move(
-        pb.center_x - tb.center_x,
-        (pb.ymax + _THERMISTANCE_OVER_RF_GAP) - tb.ymin,
-    )
+    tb = therm.bbox
+    assert tb is not None  # placed instances always have geometry
+    cx, cy = _THERMISTANCE_CENTER
+    therm.move(cx - tb.center_x, cy - tb.center_y)

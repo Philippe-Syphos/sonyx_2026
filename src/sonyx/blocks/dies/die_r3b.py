@@ -26,6 +26,7 @@ from picasso.leaves import make_straight
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..crossing_mzi import add_crossing_mzis
+from ..dc_routing import add_dc_pad_routes
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
@@ -248,4 +249,7 @@ def die_r3b() -> fw.Component:
     add_crossing_mzis(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
+    # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
+    # (pads 0-3 bias, remaining pads strapped as the common ground land).
+    add_dc_pad_routes(cell, second_head="test_modulator_head_2")
     return cell

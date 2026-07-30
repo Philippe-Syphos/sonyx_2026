@@ -17,8 +17,8 @@ the true match, and includes the nominal 50 ohm device.
 
 :func:`add_gsg_termination_sweep` stamps the cached DUT recipe cells
 straight into the die (no wrapper Component to collide at reticle
-assembly), in a single row (7 cells, ascending R) along the die's top-left
-edge. Placed only -- the pad triplets are probed directly, nothing is
+assembly), in two rows (4 then 3 cells, ascending R) in the die's top-left
+corner. Placed only -- the pad triplets are probed directly, nothing is
 routed.
 """
 
@@ -38,10 +38,16 @@ from ..parameters import parameters as _p
 # 50 ohm (25..75, 10 ohm steps) plus the nominal 50 ohm device -> 7 DUTs.
 _SWEEP_OHMS: tuple[float, ...] = (25.0, 35.0, 45.0, 50.0, 55.0, 65.0, 75.0)
 
-# Single row (7 cells, ascending R). Centre-to-centre column spacing (um);
-# DUT footprint ~600 x 425 um, so leave a clear gap for probe landing / dicing.
+# Two rows, 4 then 3 cells (ascending R, filling row 0 left-to-right first), so
+# the block stays clear of what else sits in the die's top band.
+_ROW_SIZES: tuple[int, ...] = (4, 3)
+# Centre-to-centre column spacing (um); DUT footprint ~595 x 425 um, so leave a
+# clear gap for probe landing / dicing.
 _COL_PITCH = 720.0
-# Gaps (um) from the die inner edges (past the 50 um keepout) to the row:
+# Top-to-top spacing (um) between the two rows -- one DUT height (~425) plus a
+# probe-landing gap.
+_ROW_PITCH = 545.0
+# Gaps (um) from the die inner edges (past the 50 um keepout) to the first row:
 # DUT left edges sit _LEFT_MARGIN off the left inner edge, tops _TOP_MARGIN
 # below the top inner edge.
 _LEFT_MARGIN = 260.0
@@ -84,14 +90,15 @@ def _termination_dut(target_resistance: float) -> fw.Component:
 
 
 def add_gsg_termination_sweep(cell: fw.Component) -> None:
-    """Place the GSG termination-resistance sweep along the die's top-left edge.
+    """Place the GSG termination-resistance sweep in the die's top-left corner.
 
-    A single row of :func:`_termination_dut` cells at the ``_SWEEP_OHMS``
-    resistances, ascending left-to-right (25/35/45/50/55/65/75). DUT left
-    edges sit ``_LEFT_MARGIN`` off the left inner edge (stepping east by
-    ``_COL_PITCH``); their tops sit ``_TOP_MARGIN`` below the top inner edge.
-    Instances are named ``term_dut_{R:g}ohm`` and left unrouted (the pad
-    triplets are probed directly).
+    :func:`_termination_dut` cells at the ``_SWEEP_OHMS`` resistances, ascending
+    (25/35/45/50/55/65/75), laid out in ``_ROW_SIZES`` rows -- 4 then 3 -- each
+    row filling left-to-right before the next starts. Row 0's DUT left edges sit
+    ``_LEFT_MARGIN`` off the left inner edge (stepping east by ``_COL_PITCH``)
+    and its tops ``_TOP_MARGIN`` below the top inner edge; each later row drops
+    ``_ROW_PITCH``. Instances are named ``term_dut_{R:g}ohm`` and left unrouted
+    (the pad triplets are probed directly).
     """
     half_w = _p.die_width.value / 2.0
     half_h = _p.die_height.value / 2.0
@@ -99,13 +106,18 @@ def add_gsg_termination_sweep(cell: fw.Component) -> None:
     x_left0 = (-half_w + kw) + _LEFT_MARGIN
     y_top0 = (half_h - kw) - _TOP_MARGIN
 
-    for idx, r in enumerate(_SWEEP_OHMS):
-        dut = _termination_dut(r)
-        b = dut.bbox
-        x_left = x_left0 + idx * _COL_PITCH
-        cell.add_placed(
-            dut,
-            name=f"term_dut_{r:g}ohm",
-            x=x_left - b.xmin,
-            y=y_top0 - b.ymax,
-        )
+    idx = 0
+    for row, count in enumerate(_ROW_SIZES):
+        y_top = y_top0 - row * _ROW_PITCH
+        for col in range(count):
+            r = _SWEEP_OHMS[idx]
+            idx += 1
+            dut = _termination_dut(r)
+            b = dut.bbox
+            x_left = x_left0 + col * _COL_PITCH
+            cell.add_placed(
+                dut,
+                name=f"term_dut_{r:g}ohm",
+                x=x_left - b.xmin,
+                y=y_top - b.ymax,
+            )

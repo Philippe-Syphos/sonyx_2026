@@ -11,6 +11,7 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
+from ..dc_routing import add_dc_pad_routes
 from ..gc_test_array import add_open_gc_array
 from ._frame import die_scaffold
 from ._head_coupler_block import (
@@ -21,6 +22,10 @@ from ._head_coupler_block import (
     add_mzm_output_routes,
     add_top_head_and_coupler,
 )
+
+# Top-edge inset (um) of row 1's third electrode, the one descending from the
+# top edge. Row-1 specific -- the other dies carry only the bottom pair.
+_TOP2_EDGE_INSET = 1250.0
 
 
 def die_r1b() -> fw.Component:
@@ -37,17 +42,17 @@ def die_r1b() -> fw.Component:
     )
     mb = modulator.bbox
     x0 = -mb.center_x  # centre the electrode in x
-    # Row 1 uses a 1250 um shift (rows 2-4 use the 2 mm
-    # gsg_modulator_vertical_shift default).
-    _mod_shift = 1250.0
-    bot_y = -half_h + _mod_shift - mb.ymin
+    # The bottom pair sits on the shared gsg_modulator_vertical_shift (2 mm), the
+    # same as rows 2-4, so row 1's two lower modulators line up with every other
+    # die. (They previously used a local 1250 um shift.)
+    bot_y = -half_h + _p.gsg_modulator_vertical_shift.value - mb.ymin
     top_y = bot_y + _p.gsg_modulator_spacing.value
     mod_bot = cell.add_placed(modulator, name="gsg_modulator_bot", x=x0, y=bot_y)
     mod_top = cell.add_placed(modulator, name="gsg_modulator_top", x=x0, y=top_y)
     # One more electrode descending from the top edge -- R1A's former top mirror
-    # pair is split one modulator per die, and this is R1B's half. Same top-edge
-    # inset as the bottom pair takes from the bottom edge.
-    top2_y = half_h - _mod_shift - mb.ymax
+    # pair is split one modulator per die, and this is R1B's half. Row 1's own
+    # 1250 um top-edge inset.
+    top2_y = half_h - _TOP2_EDGE_INSET - mb.ymax
     mod_top_2 = cell.add_placed(modulator, name="gsg_modulator_top_2", x=x0, y=top2_y)
     # RF launch on both electrode ends: a via lifts each modulator's bottom-metal
     # electrode up to top metal, then a width taper matches the electrode bundle to
@@ -191,4 +196,7 @@ def die_r1b() -> fw.Component:
     add_top_head_and_coupler(cell, "gsg_modulator_top_2")
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
+    # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
+    # (pads 0-3 bias, remaining pads strapped as the common ground land).
+    add_dc_pad_routes(cell)
     return cell

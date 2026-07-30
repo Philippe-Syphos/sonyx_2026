@@ -27,6 +27,7 @@ from luqia_ln200.cells.waveguides import (
     spiral_rib_sm_800nm_for_length,
     spiral_rib_ssm_800nm_for_length,
     spiral_rib_ull_horizontal_800nm_for_length,
+    taper_rib_sm_to_ssm_linear_800nm,
 )
 from picasso.leaves import make_array
 from picasso.recipe import recipe
@@ -57,6 +58,9 @@ _SPIRAL_DROP = 40.0  # um, extra downward shift of the spiral stack (widens the 
 _SPIRAL_PORT_X = 200.0
 # um, gap from the coupler array's east-most port to the spiral port line.
 _GC_TO_SPIRAL_PORT_GAP = 100.0
+# The couplers' cross-section: a spiral not already on it gets a width taper so
+# the coupler bundle stays a single-cross-section route.
+_SM_XS = "rib_sm_800nm"
 
 
 def _build_cutback(
@@ -141,6 +145,47 @@ def _build_cutback(
         name="gc_align",
         x=(array_left - (pitch - gc_w)) - lb.xmax,
         y=(coupler_gap + ab.dy) - lb.ymax,
+    )
+
+    # Route endpoints, one per spiral end. The couplers are on ``rib_sm_800nm``, so
+    # a spiral whose ports are on another cross-section (the SSM spirals -- the SM
+    # and ULL ones already present SM ports) gets a PDK width taper mated to each
+    # port, and the taper's SM side becomes the endpoint. Without it the bundle is
+    # a mixed-cross-section route, which cannot take the spec's single bend
+    # template. Both tapers are identical on every spiral, so the extra loss is
+    # common-mode and lands in the cutback intercept, not the slope.
+    route_ends: list[tuple[float, tuple[str, str]]] = []
+    for i in range(_SPIRAL_N):
+        sname = f"spiral_{i}"
+        for p in ("o1", "o2"):
+            port = cell.instances[sname].ports[p]
+            if port.cross_section is not None and port.cross_section.name == _SM_XS:
+                route_ends.append((port.position[1], (sname, p)))
+                continue
+            taper = cell.put(
+                taper_rib_sm_to_ssm_linear_800nm(),
+                (sname, p),
+                port_to="o2",  # SSM side mates the spiral; o1 (SM) faces west
+                name=f"{sname}_taper_{p}",
+            )
+            route_ends.append((taper.ports["o1"].position[1], (taper.name, "o1")))
+
+    # Wire every spiral end to a coupler in ONE bundle (default SM routing). Every
+    # endpoint faces west and every coupler port faces south, so all 2N lanes
+    # share a heading at each end and the bundle is legal.
+    #
+    # Lane order is what keeps them from crossing: the routes run west out of the
+    # spiral port line and then turn north into the couplers, so the *lowest*
+    # endpoint must take the *westmost* coupler (it travels along the bottom and
+    # turns up last). Sorting by actual y gives that, and it stays correct
+    # whichever way ``reverse`` stacked the spirals. Each spiral's o1/o2 land on an
+    # adjacent coupler pair.
+    route_ends.sort()  # bottom-up
+    cell.autoroute(
+        ports_a=[spec for _, spec in route_ends],
+        ports_b=[("couplers", f"o1_r0_c{j}") for j in range(cols)],  # west-to-east
+        spec="routing_sm_default",
+        name="spiral_gc_routes",
     )
     return cell
 
