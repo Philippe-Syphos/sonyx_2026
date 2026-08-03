@@ -12,20 +12,27 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..gc_test_array import add_open_gc_array
-from ..reflectometry import add_reflectometry_cell
-from ._frame import die_scaffold
+from ..labels import add_rf_pad_labels, add_thermistance_pad_label
+from ..reflectometry import add_reflectometry_cell, add_reflectometry_routes
+from ._frame import die_scaffold, place_thermistance_pad_west_of
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_head_input_routes,
+    add_input_beam_dumps,
     add_mzm_input_routes,
     add_mzm_output_routes,
+    add_top2_dc_pad_routes,
+    add_top2_dc_pads,
+    add_top2_gc_routes,
+    add_top2_routes,
     add_top_head_and_coupler,
 )
 
 # Top-edge inset (um) of row 1's third electrode, the one descending from the
-# top edge. Row-1 specific -- the other dies carry only the bottom pair.
-_TOP2_EDGE_INSET = 1250.0
+# top edge. Row-1 specific -- the other dies carry only the bottom pair. Moved
+# 150 um north (1250 -> 1100) to open up the band below it.
+_TOP2_EDGE_INSET = 1100.0
 
 
 def die_r1a() -> fw.Component:
@@ -90,6 +97,9 @@ def die_r1a() -> fw.Component:
     # Feed the input block's head + directional coupler from the two next-rightmost
     # circuit edge couplers (default, non-tight SM routing).
     add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    # Terminate the input stage's spare (unfed) west inputs -- one per input
+    # device -- with a PDK beam dump, mirrored away from the fed neighbour.
+    add_input_beam_dumps(cell)
     # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
     # The third modulator (gsg_modulator_top_2) has its own head and is not fed here.
     add_mzm_input_routes(cell)
@@ -101,15 +111,38 @@ def die_r1a() -> fw.Component:
     # Open grating-coupler array (4 couplers) + left alignment loop, top-right --
     # unrouted fibre I/O for the extra top modulator (gsg_modulator_top_2).
     add_open_gc_array(cell, num=4, prefix="mod_top2_gc")
+    # R1A/R1B only: park the thermistance bonding pad just west of that array
+    # instead of on the reticle-wide _THERMISTANCE_CENTER the other six dies use.
+    # Must follow the array -- the pad is re-placed relative to it.
+    place_thermistance_pad_west_of(cell, ("mod_top2_gc_array", "mod_top2_gc_align"))
     # modulator_head (left) + output directional coupler (right) for the extra top
     # modulator, rotated 180 deg vs the standard block, in the band above it.
     add_top_head_and_coupler(cell, "gsg_modulator_top_2")
+    # Four DC bias pads for that head's heaters, north-west corner (placement only).
+    add_top2_dc_pads(cell)
+    # head -> MZM and MZM -> output DC for that modulator (the rotated twin of the
+    # add_mzm_input_routes / add_mzm_output_routes pair above).
+    top2_obs = add_top2_routes(cell, "gsg_modulator_top_2")
+    # The 4 open grating couplers -> that head's inputs / that DC's open outputs.
+    add_top2_gc_routes(cell, top2_obs)
+    # That head's heater terminals -> the four north-west DC pads.
+    add_top2_dc_pad_routes(cell)
     # (The GSG termination-resistance sweep moved to R2B -- see die_r2b.)
-    # Reflectometry cell -- first pass: 4 grating couplers (left alignment loop +
-    # 2 open) below the terminators. Reflector/delay path added later.
+    # Reflectometry cell: 4 grating couplers (left alignment loop + 2 open) and the
+    # two 8 mm waveguides, in the band between the two lower modulators.
     add_reflectometry_cell(cell)
+    # The 2 open couplers -> the two waveguides' west inputs (one bundle, reversed
+    # pairing). Planned against the DC-output chain, whose dc_ec_bot drop passes just
+    # west of the descent. The waveguides' east ends stay as they are -- the bare
+    # facet and the beam dump are the DUT.
+    add_reflectometry_routes(cell, dc_ec_obs)
     # (The SM waveguide-loss cutback test cell moved to R3A -- see die_r3a. The
     # ULL twin recipe, test_waveguide_cutback_ull, is still available if wanted.)
+    # Visible names on the RF GSG launch pads (north of each triplet) and on the
+    # thermistance bonding pad (west of it). Last, so both read the pads' final
+    # placed positions -- the thermistance pad is moved twice on this die.
+    add_rf_pad_labels(cell)
+    add_thermistance_pad_label(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads". (The rightmost-edge-couplers -> SM delay
     # spiral feed is now shared for every die in die_scaffold -- see _frame.py.)

@@ -14,11 +14,13 @@ from ...parameters import parameters as _p
 from ..dc_length_sweep import add_dc_length_sweep
 from ..dc_mzi_length_sweep import add_dc_mzi_length_sweep
 from ..dc_routing import add_dc_pad_routes
+from ..labels import add_rf_pad_labels, add_thermistance_pad_label
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_head_input_routes,
+    add_input_beam_dumps,
     add_mzm_input_routes,
     add_mzm_output_routes,
 )
@@ -130,6 +132,9 @@ def die_r4a() -> fw.Component:
     # Feed the input block's head + directional coupler from the two next-rightmost
     # circuit edge couplers (default, non-tight SM routing).
     add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    # Terminate the input stage's spare (unfed) west inputs -- one per input
+    # device -- with a PDK beam dump, mirrored away from the fed neighbour.
+    add_input_beam_dumps(cell)
     # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom),
     # a single 4-lane bundle to the modulators' east ports.
     add_mzm_input_routes(cell)
@@ -141,7 +146,8 @@ def die_r4a() -> fw.Component:
     # top DC -> next two, via a west-facing U-turn stub). Shared helper.
     add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
     # # Directional-coupler coupling-length test: 8 DCs (L sweep) + GC array,
-    # top-left. Placement-only (o1/o3/o4 -> couplers, o2 open; routed later).
+    # top-left. Placed, plus the top-left group's four inputs bundled to its four
+    # west couplers (tight SM spec); o3/o4 and the other groups routed later, o2 open.
     add_dc_length_sweep(cell)
     # Back-to-back-coupler MZI (zero-arm) coupling-length test: same sweep/layout,
     # placed to the right of the single-DC sweep. Placement-only.
@@ -149,6 +155,11 @@ def die_r4a() -> fw.Component:
     # DC bias routing on TOP_METAL (first test of the routing_top_metal spec):
     # the modulator head's tunable-coupler west terminal -> DC bond pad 0.
     add_dc_pad_routes(cell)
+    # Visible names on the RF GSG launch pads (north of each triplet) and on the
+    # thermistance bonding pad (west of it) -- last, so both read the pads' final
+    # placed positions.
+    add_rf_pad_labels(cell)
+    add_thermistance_pad_label(cell)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     return cell

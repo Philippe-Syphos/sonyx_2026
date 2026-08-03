@@ -22,11 +22,13 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..crossing_mzi import add_crossing_mzi_gc_routes, add_crossing_mzis
 from ..dc_routing import add_dc_pad_routes
+from ..labels import add_rf_pad_labels, add_thermistance_pad_label
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
     add_head_and_couplers,
     add_head_input_routes,
+    add_input_beam_dumps,
     add_mzm_input_routes,
     add_mzm_output_routes,
 )
@@ -170,6 +172,9 @@ def die_r3b() -> fw.Component:
     # edge couplers (single bundle, default non-tight SM routing).
     add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value),
                           second_device="test_modulator_head_2")
+    # Terminate each head's spare (unfed) west input -- o2 on both heads here -- with
+    # a PDK beam dump, mirrored away from the fed neighbour.
+    add_input_beam_dumps(cell)
     # Route the two heads' outputs to the two MZMs (upper head -> top modulator,
     # lower head -> bottom modulator), a single 4-lane bundle to the east ports.
     add_mzm_input_routes(cell, second_device="test_modulator_head_2")
@@ -205,4 +210,9 @@ def die_r3b() -> fw.Component:
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
     # (pads 0-3 bias, remaining pads strapped as the common ground land).
     add_dc_pad_routes(cell, second_head="test_modulator_head_2")
+    # Visible names on the RF GSG launch pads (north of each triplet) and on the
+    # thermistance bonding pad (west of it) -- last, so both read the pads' final
+    # placed positions.
+    add_rf_pad_labels(cell)
+    add_thermistance_pad_label(cell)
     return cell

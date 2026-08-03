@@ -13,11 +13,13 @@ from picasso.component import PortSpec
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..dc_routing import add_dc_pad_routes
+from ..labels import add_rf_pad_labels, add_thermistance_pad_label
 from ..thermal_crosstalk import add_thermal_crosstalk
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
     add_head_and_couplers,
+    add_input_beam_dumps,
     add_mzm_input_routes,
     add_mzm_output_routes,
 )
@@ -32,7 +34,7 @@ _EXTRA_HEAD_SPACING = 100.0
 def die_r3a() -> fw.Component:
     """Build and return the R3·A die."""
     params = DieParameters()
-    cell = die_scaffold("die_R3A", params, num_bondpads=8)
+    cell = die_scaffold("die_R3A", params)
     # Two GSG phase-modulator electrodes (SM on column A) stacked vertically:
     # bottom one gsg_modulator_vertical_shift above the die bottom edge, top one
     # gsg_modulator_spacing (centre-to-centre) above it. Placed directly so their
@@ -177,6 +179,11 @@ def die_r3a() -> fw.Component:
         spec="routing_sm_default",
         strategy="vgraph_rect",
     )
+    # Terminate each head's spare (unfed) west input with a PDK beam dump, mirrored
+    # away from the fed neighbour. Note the two heads are fed on opposite ports here
+    # (each on its nearer one), so the spare is the upper head's o2 and the lower
+    # head's o1 -- add_input_beam_dumps reads that off the nets rather than assuming.
+    add_input_beam_dumps(cell)
     # Route the two heads' outputs to the two MZMs (upper head -> top modulator,
     # lower head -> bottom modulator), a single 4-lane bundle to the east ports.
     add_mzm_input_routes(cell, second_device="test_modulator_head_2")
@@ -199,4 +206,9 @@ def die_r3a() -> fw.Component:
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
     # (pads 0-3 bias, remaining pads strapped as the common ground land).
     add_dc_pad_routes(cell, second_head="test_modulator_head_2")
+    # Visible names on the RF GSG launch pads (north of each triplet) and on the
+    # thermistance bonding pad (west of it) -- last, so both read the pads' final
+    # placed positions.
+    add_rf_pad_labels(cell)
+    add_thermistance_pad_label(cell)
     return cell
