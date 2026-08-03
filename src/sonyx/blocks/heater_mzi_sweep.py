@@ -40,6 +40,7 @@ from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord
 from luqia_ln200.cells.waveguides import straight_rib_sm_800nm
 from picasso.leaves import make_array
 from picasso.recipe import recipe
+from picasso.routing import ObstacleSet
 
 from ..parameters import parameters as _p
 
@@ -320,6 +321,17 @@ def _add_dc_pads(cell: fw.Component) -> None:
 # the west column takes dc_pad_1..4 and the east column dc_pad_5..8.
 _PADS_PER_COLUMN = 4
 
+# Forced first leg (um) out of the MZI outputs, east, before the pathfinder's first
+# vertex. Required -- see add_heater_mzi_output_routes -- and deliberately small:
+# that leg is the block's easternmost intrusion, toward the next coupler group.
+_OUT_START_STRAIGHT = 40.0
+# Search-window inflation (um) around the output bundle's endpoint bbox. The 50 um
+# default clips the window before that eastward leg can turn north (the leg plus an
+# Euler L-bend needs ~120 um east of the eastmost o2, which is already the bbox
+# edge), and the east column then has no path at all. Results are identical for
+# anything from 100 up, so this is headroom, not tuning.
+_OUT_BBOX_MARGIN = 150.0
+
 
 def _column_mzis(column: int) -> list[str]:
     """Instance names of ``column``'s MZIs, **top to bottom** (0 = west, 1 = east)."""
@@ -335,19 +347,22 @@ def add_heater_mzi_signal_routes(cell: fw.Component, column: int) -> None:
     heater, so each gets its own pad: the first three of that column's four
     (``dc_pad_1..3`` west, ``dc_pad_5..7`` east), landing on their north faces.
 
-    A **single** autoroute: the ``e1`` terminals all sit on one vertical line (x is
-    set by the column, not by the swept heater length), which is what a bundle
-    needs -- and they end on three distinct pads 400 um apart, so there is a real
-    corridor to collapse into. The ``e2`` terminals could not be bundled: the heater
-    length is what the sweep varies, so they are not co-linear.
+    **One bundle, not three individual routes.** These three lines must be planned
+    together: routed independently they know nothing about each other and their
+    metal overlaps (M8's and M12's lanes shorted around x -3555 when tried), since
+    the union of their footprints looks fine while the lanes themselves collide.
+    The bundle is what holds the lanes apart at the spec's lane pitch.
 
     Lane order: the lines leave west and turn **south** to the pads -- a left turn,
     so the lane on the outside (northmost) stays outside and lands westmost.
     Pairing the sources top-down against the pads west-to-east therefore keeps the
     three lanes from crossing.
 
-    ``grid_astar`` rather than the default ``vgraph_rect``, which finds no path to
-    the goal gateway for this bundle.
+    ``vgraph_euclid`` + ``fan_out``: the default ``vgraph_rect`` finds no path to
+    the goal gateway here, and ``grid_astar`` costs ~40x more wall-clock for the
+    same path. ``fan_out`` is required either way -- without it the planner rejects
+    the bundle ("lane 0's destination column lies 271.2 um BEHIND its approach
+    leg"); the staircase corridor absorbs that reversal.
 
     The pads' north face is the port named ``"e"``: the pads are placed
     ``rotation=90``, which rotates the port poses but not their names.
@@ -358,15 +373,13 @@ def add_heater_mzi_signal_routes(cell: fw.Component, column: int) -> None:
         ports_a=[(name, "e1") for name in mzis],
         ports_b=[(f"dc_pad_{first_pad + k}", "e") for k in range(len(mzis))],  # west->east
         spec="routing_top_metal",
-        strategy="grid_astar",
-        # step=10 makes the A* grid ~20x more expensive here (the grid scales
-        # O(N^2) with the search-area side) for the same resulting path: 25 um
-        # plans this bundle in ~90 ms instead of ~1.7 s, bbox unchanged.
-        step=25.0,
+        strategy="vgraph_euclid",
+        fan_out=True,
         # DC metal may run over the cells it wires -- the terminals sit inside the
         # MZI bodies and there is no clear lane out otherwise.
         avoid_port_owners=False,
         name=f"heater_mzi_sig_{'west' if column == 0 else 'east'}",
+        end_straight=50.0
     )
 
 
@@ -381,18 +394,148 @@ def add_heater_mzi_ground_routes(cell: fw.Component, column: int) -> None:
     the same port, so there is nothing for a bundle to collapse onto; and the ``e2``
     terminals are not co-linear (the heater length is what the sweep varies, so each
     MZI's east terminal sits at a different x), which a bundle requires.
+
+    The **east** column's lines get a staggered ``start_straight`` (300 / 150 / 0
+    um from the top): the heater grows down the stack, so without the forced
+    eastward first leg an upper drop cuts across the longer heaters of the MZIs
+    below it on its way to the shared pad. The stagger pushes each line east
+    past them first (the west column's shorter heaters clear without it). Each
+    east line also gets a 300 um ``end_straight``, so the last leg descends
+    vertically onto the pad's north face instead of angling in over the row.
     """
     mzis = _column_mzis(column)
     gnd_pad = (f"dc_pad_{(column + 1) * _PADS_PER_COLUMN}", "e")  # north face
     side = "west" if column == 0 else "east"
-    for mzi_name in mzis:
+    starts = (300.0, 150.0, None) if column == 1 else (None, None, None)
+    end_straight = 300.0 if column == 1 else None
+    for mzi_name, start_straight in zip(mzis, starts, strict=True):
         cell.autoroute(
             ports_a=[(mzi_name, "e2")],
             ports_b=[gnd_pad],
             spec="routing_top_metal",
             avoid_port_owners=False,
+            start_straight=start_straight,
+            end_straight=end_straight,
             name=f"heater_mzi_gnd_{side}_{mzi_name.removeprefix('heater_mzi_')}",
         )
+
+
+def add_heater_mzi_input_routes(cell: fw.Component, column: int) -> None:
+    """Bundle-route one column's MZI inputs (``o1``) to its three westmost couplers.
+
+    **One autoroute call.** All three ``o1`` ports share an outward heading (west)
+    and all three coupler ports share an inward heading (north), which is what
+    lets a single bundle serve the whole column: west out of the MZI stack, north
+    up a corridor left of the column, then east along the band between the MZI
+    tops and the coupler line, peeling off into ``c0`` / ``c1`` / ``c2`` from
+    below.
+
+    Lane order is the crossing-free one, and it falls out of the turn geometry:
+    west->north->east is two right turns, so the **southmost** ``o1`` (the
+    column's last MZI) rides the outside of both and ends up the northmost lane --
+    closest to the coupler line, so it peels off first onto the westmost coupler.
+    Pairing the column bottom-to-top against ``c0``/``c1``/``c2`` west-to-east
+    therefore keeps the lanes from crossing (west column: ``M12 -> c0``,
+    ``M8 -> c1``, ``M4 -> c2``). Note this is *not* the straight drop from ``c0``
+    that :func:`_add_devices` pins the column's x to -- that alignment sets the
+    corridor, and the top MZI is the one that hauls furthest east.
+
+    Runs on ``routing_sm_default``: the ~265 um band fits three nested turns of
+    the large PDK Euler L-bend, so there is no reason to pay the tight bend's
+    extra curvature loss on an optical measurement path.
+
+    Obstacles: the column's three MZI bodies, its coupler array and its alignment
+    loop -- the loop walls off the corridor above its bottom edge and holds the
+    westward excursions below it. The already-placed heater bias routes are *not*
+    obstacles: they are TOP_METAL, a different layer from the rib waveguide.
+    """
+    mzis = _column_mzis(column)  # top -> bottom
+    side = "west" if column == 0 else "east"
+    suffix = "l" if column == 0 else "r"
+    array = f"heater_mzi_gc_array_{suffix}"
+    obs = ObstacleSet(name=f"heater_mzi_in_{side}")
+    for name in mzis:
+        obs.add_instance(cell.instances[name])
+    obs.add_instance(cell.instances[array])
+    obs.add_instance(cell.instances[f"heater_mzi_gc_align_{'l' if column == 0 else 'mid'}"])
+    cell.autoroute(
+        ports_a=[(name, "o1") for name in reversed(mzis)],  # bottom -> top
+        ports_b=[(array, f"o1_r0_c{k}") for k in range(len(mzis))],  # west -> east
+        obstacles=obs,
+        spec="routing_sm_default",
+        strategy="grid_astar",
+        step=10.0,
+        name=f"heater_mzi_in_{side}",
+    )
+
+
+def add_heater_mzi_output_routes(cell: fw.Component, column: int) -> None:
+    """Bundle-route one column's MZI outputs (``o2``) to its three eastmost couplers.
+
+    **One autoroute call**, the mirror of :func:`add_heater_mzi_input_routes`: east
+    out of the MZI stack, north up a corridor right of the column, then a haul back
+    **west** along the band between the MZI tops and the coupler line, peeling off
+    into ``c5`` / ``c4`` / ``c3`` from below.
+
+    Lane order is again the crossing-free one. East->north->west is two *left*
+    turns, but the southmost ``o2`` still rides the outside of both and still ends
+    up the northmost lane, so it still peels off first -- except going west the
+    first coupler reached is ``c5``. So the column pairs bottom-to-top against
+    ``c5``/``c4``/``c3`` east-to-west (west column: ``M12 -> c5``, ``M8 -> c4``,
+    ``M4 -> c3``), which combined with the input side gives each MZI a **nested**
+    coupler pair (``M12: c0<->c5``, ``M8: c1<->c4``, ``M4: c2<->c3``). All six sit
+    on one ``grating_coupling_pitch_for_tests`` row, so a 6-fibre array still lands
+    the column in a single placement.
+
+    Unlike the input side these ``o2`` ports are **not** co-linear -- the heater
+    length is what the sweep varies, so each MZI's output sits ~95 um further east
+    than the one above. Two consequences:
+
+    - ``fan_in`` is unusable (it wants the sources on a common spine, and rejects
+      the 190 um spread outright). The bundle's own staircase absorbs the offsets
+      instead.
+    - An explicit ``start_straight`` is **required**. ``c5`` sits ~193 um *west* of
+      the eastmost (bottom) ``o2``, so with the default the planner tries to head
+      west on leg 0 straight out of an east-facing port and rejects the bundle
+      ("heads 180.0 deg but the cursor was heading 0.0 deg"). Any explicit value
+      fixes it; ``_OUT_START_STRAIGHT`` is kept small to hold the mandatory
+      eastward excursion back, since it reaches past the column's own devices.
+
+    That same eastward leg is why ``bbox_margin`` is raised (see
+    ``_OUT_BBOX_MARGIN``): the eastmost ``o2`` *is* the endpoint-bbox edge, so at
+    the 50 um default there is no room to turn north and the east column finds no
+    path at all.
+
+    Obstacles: as the input side, plus both alignment loops and the column's own
+    input bundle -- the two bundles sit in disjoint x ranges (west column: input
+    stops at ~ -3549, ``c3`` at ~ -3432; east column: ~ -2297 and ~ -2266), so
+    listing the input bundle makes that separation explicit rather than incidental.
+    The **east** column's eastward leg reaches x ~ -1064, which clears the
+    neighbouring paperclip block (west edge ~ -800) by ~260 um -- comfortable, but
+    incidental: that block belongs to another module and is not in this set.
+    """
+    mzis = _column_mzis(column)  # top -> bottom
+    side = "west" if column == 0 else "east"
+    array = f"heater_mzi_gc_array_{'l' if column == 0 else 'r'}"
+    n = len(mzis)
+    obs = ObstacleSet(name=f"heater_mzi_out_{side}")
+    for name in mzis:
+        obs.add_instance(cell.instances[name])
+    obs.add_instance(cell.instances[array])
+    obs.add_instance(cell.instances["heater_mzi_gc_align_l"])
+    obs.add_instance(cell.instances["heater_mzi_gc_align_mid"])
+    obs.add_instance(cell.instances[f"heater_mzi_in_{side}"])
+    cell.autoroute(
+        ports_a=[(name, "o2") for name in reversed(mzis)],  # bottom -> top
+        ports_b=[(array, f"o1_r0_c{k}") for k in range(2 * n - 1, n - 1, -1)],  # east -> west
+        obstacles=obs,
+        spec="routing_sm_default",
+        strategy="grid_astar",
+        step=10.0,
+        start_straight=_OUT_START_STRAIGHT,
+        bbox_margin=_OUT_BBOX_MARGIN,
+        name=f"heater_mzi_out_{side}",
+    )
 
 
 def add_heater_mzi_sweep(cell: fw.Component) -> None:
@@ -404,8 +547,15 @@ def add_heater_mzi_sweep(cell: fw.Component) -> None:
     signals to that column's three signal pads
     (:func:`add_heater_mzi_signal_routes`) and the three ``e2`` terminals tied to
     its shared ground pad (:func:`add_heater_mzi_ground_routes`) -- west column on
-    ``dc_pad_1..4``, east column on ``dc_pad_5..8``. The optical I/O is still
-    unrouted.
+    ``dc_pad_1..4``, east column on ``dc_pad_5..8``.
+
+    Optical I/O: each column is wired to its own coupler half in two bundles --
+    inputs onto that half's three westmost couplers
+    (:func:`add_heater_mzi_input_routes`) and outputs onto its three eastmost
+    (:func:`add_heater_mzi_output_routes`), giving every MZI a nested
+    ``c0<->c5`` / ``c1<->c4`` / ``c2<->c3`` pair within its group. Input before
+    output per column: the output bundle takes the column's input bundle as an
+    obstacle.
     """
     _add_gc_array(cell)
     _add_devices(cell)
@@ -413,3 +563,6 @@ def add_heater_mzi_sweep(cell: fw.Component) -> None:
     for column in (0, 1):  # 0 = west, 1 = east
         add_heater_mzi_signal_routes(cell, column)
         add_heater_mzi_ground_routes(cell, column)
+    for column in (0, 1):
+        add_heater_mzi_input_routes(cell, column)
+        add_heater_mzi_output_routes(cell, column)

@@ -14,8 +14,8 @@ Each cell mirrors the waveguide-cutback idiom (``test_cells_die_r1a._build_cutba
 chains laid horizontally, stacked vertically and left-aligned; a horizontal GC
 array (two couplers per chain) on top; and a GC alignment loop one pitch to the
 **left** of the array. The through path (o1->o2) is chained; the transverse arms
-(o3/o4) are open stubs. Placement only -- the chains are not routed to the
-couplers.
+(o3/o4) are open stubs. The chain **west** ends are wired to the three westmost
+couplers (see :func:`_route_west_couplers`); the east ends are not routed yet.
 """
 
 from __future__ import annotations
@@ -28,21 +28,84 @@ from luqia_ln200.cells.couplers import (
 )
 from picasso.leaves import make_array, make_straight
 from picasso.recipe import recipe
+from picasso.routing import ObstacleSet
 
 from ..parameters import parameters as _p
 
 # Cascade lengths (number of crossings in series) -- the cutback lever arm.
 _COUNTS: tuple[int, ...] = (10, 30, 60)
 _CHAIN_STACK_GAP = 120.0  # um, vertical gap between adjacent stacked chains
-_COUPLER_ROW_GAP = 100.0  # um, gap from the GC array bottom to the chain stack top
+_COUPLER_ROW_GAP = 200.0  # um, gap from the GC array bottom to the chain stack top
 _CHAIN_DROP = 40.0  # um, extra downward shift of the chain stack (widens the gap)
 
 # Placement on R2A: both blocks sit to the right of the racetrack sweep, MMI on
 # top and tapered below. The left margin clears the widest racetrack (which ends
 # ~2.2 mm right of the left inner edge); the top line matches the racetracks'.
 _BLOCK_LEFT_MARGIN = 2550.0  # stack left edge off the left inner edge
-_BLOCK_TOP_MARGIN = 40.0  # GC tops below the top inner edge
+_BLOCK_TOP_MARGIN = 140.0  # GC tops below the top inner edge
 _BLOCK_GAP = 150.0  # vertical gap between the MMI (top) and tapered (bottom) blocks
+
+
+def _route_couplers(cell: fw.Component) -> None:
+    """Wire every chain end to a grating coupler -- **one autoroute call per side**.
+
+    Each side is a single bundle: the three ports share an outward heading (west
+    ``o1`` / east ``o2``) and the three couplers share an inward heading (north),
+    which is what lets one call serve all three chains. Both bundles converge on
+    the band between the chain stack and the GC row and peel off into their
+    couplers from below:
+
+    - **west** (``o1`` -> ``c0``/``c1``/``c2``): west out of the stack, north up
+      a corridor left of ``x = 0``, then east along the band.
+    - **east** (``o2`` -> ``c5``/``c4``/``c3``): east out of the stack, north up
+      a corridor right of the chain ends, then a long west haul along the band.
+
+    Lane order is the crossing-free one on both sides, and it falls out of the
+    turn geometry. West->north->east is two right turns and east->north->west is
+    two left turns; either way the **southmost** port (the longest chain,
+    ``_COUNTS[-1]``) rides the outside of both turns and ends up the northmost
+    lane -- closest to the GC row, so it peels off first. Going east the first
+    coupler reached is ``c0``; going west it is ``c5``. So bottom-to-top chains
+    map outward-in on both sides, and each chain gets a **nested** coupler pair::
+
+        chain_n60: c0 <-> c5      chain_n30: c1 <-> c4      chain_n10: c2 <-> c3
+
+    (Not adjacent pairs -- adjacent pairing would force the lanes to cross. All
+    six sit on one ``grating_coupling_pitch_for_tests`` row, so a 6-fibre array
+    still lands the whole block in one placement.)
+
+    Lanes run on ``routing_sm_tight``: three nested turns of the default 100 um
+    bend don't fit the band. The east targets (``x >= 401``) all sit east of the
+    west bundle's reach (``x <= 285``), so the two bundles share the band without
+    contending for it -- ``add_routes`` on the shared obstacle set keeps the east
+    lanes off the west ones regardless. Other obstacles: the three chain bodies
+    (a lane may bend around a chain, never through it), the coupler array, and
+    the alignment loop, which walls off the far-west corridor above its bottom
+    edge and forces the west bundle's eastward runs into the band beneath it.
+    """
+    obs = ObstacleSet(name="crossing_cutback_gc")
+    obs.add_routes(cell)  # live rule: the east bundle bends around the west one
+    for n in _COUNTS:
+        obs.add_instance(cell.instances[f"chain_n{n}"])
+    obs.add_instance(cell.instances["couplers"])
+    obs.add_instance(cell.instances["gc_align"])
+    # Chains bottom-to-top on both sides; couplers outward-in (west 0,1,2 /
+    # east 5,4,3) so the bundles nest instead of crossing. West first -- it owns
+    # the inner band, and the east haul has the whole band width to nest under.
+    ncnt = len(_COUNTS)
+    for side, port, cols in (
+        ("west", "o1", range(ncnt)),
+        ("east", "o2", range(2 * ncnt - 1, ncnt - 1, -1)),
+    ):
+        cell.autoroute(
+            ports_a=[(f"chain_n{n}", port) for n in reversed(_COUNTS)],
+            ports_b=[("couplers", f"o1_r0_c{i}") for i in cols],
+            obstacles=obs,
+            spec="routing_sm_tight",
+            strategy="grid_astar",
+            step=10.0,
+            name=f"{side}_gc_bundle",
+        )
 
 
 @recipe
@@ -120,6 +183,9 @@ def _build_crossing_cutback(crossing_name: str) -> fw.Component:
         x=-(pitch - gc_w) - lb.xmax,
         y=(_COUPLER_ROW_GAP + ab.dy) - lb.ymax,
     )
+
+    # Fibre I/O: chain o1 -> the 3 west couplers, o2 -> the 3 east ones (1 call each).
+    _route_couplers(cell)
     return cell
 
 
@@ -141,7 +207,9 @@ def add_crossing_cutbacks(cell: fw.Component) -> None:
     Both blocks are left-aligned ``_BLOCK_LEFT_MARGIN`` off the left inner edge
     (clearing the racetrack sweep), the MMI block's GC tops ``_BLOCK_TOP_MARGIN``
     below the top inner edge and the tapered block ``_BLOCK_GAP`` beneath it.
-    Instances ``cutback_mmi`` / ``cutback_tapered``. Placement only.
+    Instances ``cutback_mmi`` / ``cutback_tapered``. Each block carries its own
+    west-half fibre routing (see :func:`_route_west_couplers`); the chain east
+    ends are still unrouted.
     """
     half_w = _p.die_width.value / 2.0
     half_h = _p.die_height.value / 2.0

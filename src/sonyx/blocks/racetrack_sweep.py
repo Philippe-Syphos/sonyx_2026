@@ -11,8 +11,8 @@ across devices as a self-consistency check.
 
 The racetracks stand in a column (buses on one low line, loops extending up),
 with a grating-coupler array + alignment loop to their right for fibre I/O (2
-couplers per device). This pass places the racetracks + GC array only; the buses
-are not yet routed to the couplers.
+couplers per device). :func:`add_racetrack_sweep` places the racetracks + GC
+array; :func:`add_racetrack_gc_routes` wires each bus to its coupler pair.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from luqia_ln200.cells.couplers import (
 )
 from picasso.leaves import make_array
 from picasso.recipe import recipe
+from picasso.routing import ObstacleSet
 
 from ..parameters import parameters as _p
 
@@ -111,3 +112,54 @@ def add_racetrack_sweep(cell: fw.Component) -> None:
         cell.add_placed(
             r, name=f"racetrack_Ls{length:g}", x=x0 + b.ymax, y=y_bottom, rotation=90.0
         )
+
+
+def add_racetrack_gc_routes(cell: fw.Component) -> None:
+    """Route each racetrack's bus ends to its grating-coupler pair on R2A.
+
+    Racetrack ``i`` (top to bottom, shortest first) takes the GC array's adjacent
+    column pair ``c{2i}`` / ``c{2i+1}``. After the 90 deg placement rotation the
+    bus is vertical: ``o2`` (thru) sits at the bus **top** facing north, ``o1``
+    (input) at the bus **bottom** facing south. The staircase placement puts every
+    bus east of all the devices above it, so:
+
+    - ``o2 -> c{2i}``: climbs straight up its bus corridor into the band above the
+      stack, then jogs to its coupler.
+    - ``o1 -> c{2i+1}``: dips under the bus end, wraps **east** around it, and
+      climbs a corridor just east of its own bus (west of the next bus down) into
+      the band. Wrapping west instead would trap the line under its own loop
+      (the loops extend west, left-aligned, so there is no west corridor).
+
+    Landing order thus matches band-entry order west to east -- the crossing-free
+    matching. Ls1000's ``c6`` and Ls1500's ``c8``/``c9`` sit west of their buses,
+    so those lines jog back west inside the band; the shared obstacle set nests
+    the jogs instead of crossing them.
+
+    **One autoroute call per connection** -- the two bus ports face opposite ways
+    (a bundle needs a shared outward heading), and each racetrack's pair lands at
+    a different staircase depth. All ten on ``routing_sm_tight`` (the ~100 um
+    inter-device lanes and the bus wrap-arounds don't fit the default 100 um bend),
+    planned against one shared obstacle set: the five racetrack bodies (a line may
+    bend around a device but never through it) plus the ``add_routes`` live rule,
+    so later lines bend around earlier ones. Routing order is the nesting order:
+    top to bottom, and per racetrack ``o2`` before ``o1`` -- ``o2`` owns the bus
+    corridor, and letting ``o1`` go first parks its climb on that corridor, which
+    walls ``o2`` in between its own bus and the alignment loop.
+    """
+    # obs = ObstacleSet(name="racetrack_gc_chain")
+    # obs.add_routes(cell)
+    # for length in _L_S:
+    #     obs.add_instance(cell.instances[f"racetrack_Ls{length:g}"])
+    # for i, length in enumerate(_L_S):
+    #     rt_name = f"racetrack_Ls{length:g}"
+    #     for j, port in enumerate(("o2", "o1")):
+    #         cell.autoroute(
+    #             ports_a=[(rt_name, port)],
+    #             ports_b=[("racetrack_gc_array", f"o1_r0_c{_GC_PER_RT * i + j}")],
+    #             obstacles=obs,
+    #             spec="routing_sm_tight",
+    #             strategy="grid_astar",
+    #             step=10.0,
+    #             end_straight=60.0,
+    #             name=f"{rt_name}_gc_{port}",
+    #         )

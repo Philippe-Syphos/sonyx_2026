@@ -35,6 +35,7 @@ from luqia_ln200.cells.modulators import paperclip_tops_rib_sm_800nm
 from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord
 from picasso.leaves import make_array, make_straight
 from picasso.recipe import recipe
+from picasso.routing import ObstacleSet
 
 from ..parameters import parameters as _p
 from .heater_mzi_sweep import _NUM_DC_PADS as _HEATER_NUM_DC_PADS
@@ -73,6 +74,19 @@ _GC_TO_BLOCK_GAP = 60.0  # from the GC array bottom down to the top device's top
 _NUM_DC_PADS = 4
 # Routing spec for the heater bias / ground metal (see luqia_ln200.tech.routing_specs).
 _DC_SPEC = "routing_top_metal"
+
+# Fibre-I/O bundle knobs, both sides (see add_paperclip_input_routes).
+# Forced first leg (um) along each MZI port's own heading before the pathfinder's
+# first vertex. Required on *both* sides here: every coupler this block targets sits
+# on the far side of the ports it feeds (the couplers span x -526..109 while the
+# inputs are all west of -624 and the outputs all east of +207), so without it the
+# planner tries to reverse on leg 0 and rejects the bundle. Kept small -- these legs
+# are the block's outermost intrusions.
+_GC_START_STRAIGHT = 40.0
+# Search-window inflation (um) around each bundle's endpoint bbox. The 50 um default
+# leaves no room for that forced leg to turn (the outermost port *is* the bbox edge)
+# and neither side finds a path. Identical results from 150 up -- headroom, not tuning.
+_GC_BBOX_MARGIN = 150.0
 
 
 def _straight(length: float) -> fw.Component:
@@ -208,7 +222,13 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
     excluded from that centre), so the three devices -- which differ in width with
     num_arms -- sit symmetrically under their couplers instead of being
     left-aligned. The couplers and pads stay anchored at ``_INPUT_X``.
-    Placement-only.
+
+    Then the wiring: heater bias metal (:func:`add_paperclip_signal_routes` +
+    :func:`add_paperclip_ground_routes`) and the fibre I/O, one bundle per side --
+    inputs onto the three westmost couplers (:func:`add_paperclip_input_routes`),
+    outputs onto the three eastmost (:func:`add_paperclip_output_routes`), giving
+    each MZI a nested ``c0<->c5`` / ``c1<->c4`` / ``c2<->c3`` pair. Input before
+    output: the output bundle takes the input bundle as an obstacle.
     """
     half_h = _p.die_height.value / 2.0
     kw = _p.keepout_width.value
@@ -242,6 +262,114 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
     # Heater wiring, same configuration as the neighbouring heater_cr block.
     add_paperclip_signal_routes(cell)
     add_paperclip_ground_routes(cell)
+    # Fibre I/O: one bundle per side, input first (the output avoids it).
+    add_paperclip_input_routes(cell)
+    add_paperclip_output_routes(cell)
+
+
+def _gc_obstacles(cell: fw.Component, name: str, *, sibling: str | None = None) -> ObstacleSet:
+    """Obstacle set shared by the block's two fibre-I/O bundles.
+
+    The three MZI bodies (a lane may bend around a device, never through it), the
+    coupler array and the alignment loop. ``sibling`` adds the other bundle where
+    one is already placed. The heater bias routes are deliberately **absent**: they
+    are TOP_METAL, a different layer from the rib waveguide, so listing them would
+    only wall off lanes that are free to cross them.
+    """
+    obs = ObstacleSet(name=name)
+    for n in _NUM_ARMS:
+        obs.add_instance(cell.instances[f"paperclip_mzi_N{n}"])
+    obs.add_instance(cell.instances["paperclip_gc_array"])
+    obs.add_instance(cell.instances["paperclip_gc_align"])
+    if sibling is not None:
+        obs.add_instance(cell.instances[sibling])
+    return obs
+
+
+def add_paperclip_input_routes(cell: fw.Component) -> None:
+    """Bundle-route the MZI inputs (``o1``) to the three westmost couplers.
+
+    **One autoroute call.** All three ``o1`` ports share an outward heading (west)
+    and all three coupler ports share an inward heading (north), which is what lets
+    a single bundle serve all three devices: west out of the stack, north up a
+    corridor left of it, then east into ``c0`` / ``c1`` / ``c2`` from below.
+
+    Lane order is the crossing-free one, and it falls out of the turn geometry:
+    west->north->east is two right turns, so the **southmost** ``o1`` (``N7``, the
+    bottom device) rides the outside of both and ends up the northmost lane --
+    closest to the coupler line, so it peels off first onto the westmost coupler.
+    Pairing bottom-to-top against ``c0``/``c1``/``c2`` west-to-east therefore keeps
+    the lanes from crossing: ``N7 -> c0``, ``N5 -> c1``, ``N3 -> c2``.
+
+    Two things differ from the heater_cr block's equivalent bundles. The devices
+    **widen with** ``num_arms`` and are centred on the coupler array, so neither
+    port set is co-linear -- the inputs staircase ~96 um further west per row down
+    (``fan_in`` is therefore unusable; the bundle's own staircase absorbs the
+    offsets). And every coupler sits *east* of every input, so this side needs the
+    same forced first leg as the output side -- see ``_GC_START_STRAIGHT`` and
+    ``_GC_BBOX_MARGIN``.
+
+    Runs on ``routing_sm_default``: the large PDK Euler L-bend fits, so there is no
+    reason to pay the tight bend's extra curvature loss on a measurement path --
+    even though the band between the top device and the coupler line is only ~120 um
+    here (``_GC_TO_BLOCK_GAP``), a third of the heater block's. The staircase is
+    what buys the room: each lane climbs in its own device's shadow rather than
+    nesting three turns into that band.
+    """
+    cell.autoroute(
+        ports_a=[(f"paperclip_mzi_N{n}", "o1") for n in reversed(_NUM_ARMS)],  # bottom -> top
+        ports_b=[("paperclip_gc_array", f"o1_r0_c{k}") for k in range(len(_NUM_ARMS))],
+        obstacles=_gc_obstacles(cell, "paperclip_in"),
+        spec="routing_sm_default",
+        strategy="grid_astar",
+        step=10.0,
+        start_straight=_GC_START_STRAIGHT,
+        bbox_margin=_GC_BBOX_MARGIN,
+        name="paperclip_in",
+    )
+
+
+def add_paperclip_output_routes(cell: fw.Component) -> None:
+    """Bundle-route the MZI outputs (``o2``) to the three eastmost couplers.
+
+    **One autoroute call**, the mirror of :func:`add_paperclip_input_routes`: east
+    out of the stack, north up a corridor right of it, then back **west** into
+    ``c5`` / ``c4`` / ``c3`` from below.
+
+    East->north->west is two *left* turns, but the southmost ``o2`` still rides the
+    outside of both and still ends up the northmost lane, so it still peels off
+    first -- except going west the first coupler reached is ``c5``. So the stack
+    pairs bottom-to-top against ``c5``/``c4``/``c3`` east-to-west, which combined
+    with the input side gives each MZI a **nested** coupler pair::
+
+        N7: c0 <-> c5        N5: c1 <-> c4        N3: c2 <-> c3
+
+    All six sit on one ``grating_coupling_pitch_for_tests`` row, so a 6-fibre array
+    still lands the block in a single placement. Adjacent pairing would force the
+    lanes to cross.
+
+    The outputs staircase the *opposite* way to the inputs (~96 um further **east**
+    per row down, and each ``o2`` also sits ~105 um above its own ``o1`` -- the
+    offset-coupler topology lifts the combiner over the paperclip). Same knobs as
+    the input side, and the input bundle is added as an obstacle: the two sit in
+    disjoint x ranges (input reaches ~ -262, ``c3`` sits at ~ -145), so listing it
+    makes that separation explicit rather than incidental.
+
+    The eastward leg reaches x ~ +530, which is clear ground -- the next block east
+    (the unbalanced-MZI ladder) starts past x 3200.
+    """
+    n = len(_NUM_ARMS)
+    cell.autoroute(
+        ports_a=[(f"paperclip_mzi_N{a}", "o2") for a in reversed(_NUM_ARMS)],  # bottom -> top
+        ports_b=[("paperclip_gc_array", f"o1_r0_c{k}") for k in range(2 * n - 1, n - 1, -1)],
+        obstacles=_gc_obstacles(cell, "paperclip_out", sibling="paperclip_in"),
+        spec="routing_sm_default",
+        strategy="grid_astar",
+        step=10.0,
+        start_straight=_GC_START_STRAIGHT,
+        bbox_margin=_GC_BBOX_MARGIN,
+        name="paperclip_out",
+    )
 
 
 def add_paperclip_signal_routes(cell: fw.Component) -> None:

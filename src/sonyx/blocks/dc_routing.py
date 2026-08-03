@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .labels import DC_PAD_LABEL_HEIGHT, add_horizontal_label
+
 if TYPE_CHECKING:
     import picasso as fw
     from picasso.component import PortSpec
@@ -36,6 +38,23 @@ _DC_SPEC = "routing_top_metal"
 _DC_STRATEGY = "vgraph_rect"
 
 _PAD_ARRAY = "bondpads"
+
+# Gap (um) between a bond pad's west face and its label's east moat edge.
+_DC_PAD_LABEL_GAP = 9.0
+
+# End-straight (um) on the shared-ground rail. Pushes the run off the pad faces
+# before it turns north, so it sits mid-strip instead of hugging the array --
+# there is room for it now that the array has moved west.
+_DC_GND_RAIL_END_STRAIGHT = 20.0
+
+# End-straight (um) on the head-ground bundle, which lands on the top pad's north
+# face. The terminals sit at or below that face, so the lanes have to come back
+# down onto it; without a forced approach the planner needs legs shorter than its
+# minimum and gives up ("no candidate-line corner satisfies the minimum-leg
+# floors"). 300 is what a four-lane bundle needs to clear that on both two-head
+# dies -- 150 is enough for R3A but leaves R3B unroutable. ``fan_in`` / ``fan_out``
+# do route R3A but never rescue R3B, and cost ~60% more elements where they work.
+_DC_GND_HEAD_END_STRAIGHT = 300.0
 
 # Pads 0..3 carry the modulator head's four independent bias lines; every pad
 # above them is strapped together as the common ground land.
@@ -225,29 +244,31 @@ def add_dc_pad_routes(cell: fw.Component, second_head: str | None = None) -> Non
         name="dc_bias_head_phase_west",
     )
 
-    # Common ground: both TOPS outer (east) terminals tied onto the top-most pad.
+    # Common ground: every head's two outer (east) TOPS terminals tied onto the
+    # top-most pad, as one bundle -- two lanes on a single-head die, four when a
+    # second head is given. They all share the same outward heading (east) and the
+    # same destination, which is what a bundle wants.
+    #
+    # They land on the pad's **north** face, not its west one. West puts four
+    # lanes on a single 120 um face, which the planner resolves by doubling back
+    # over the pad array. North is the top pad's one free face -- the strap below
+    # it uses its south, the rail its east -- and the space above the array is
+    # open. Only the top pad has a free north face; every other pad keeps the
+    # west-face convention.
+    gnd_terminals = [(head, "e_phase_2"), (head, "e_phase2_2")]
+    end_straight = 0.0
+    if second_head is not None:
+        gnd_terminals += [(second_head, "e_phase_2"), (second_head, "e_phase2_2")]
+        end_straight = _DC_GND_HEAD_END_STRAIGHT
     cell.autoroute(
-        ports_a=[(head, "e_phase_2"), (head, "e_phase2_2")],
-        ports_b=[dc_pad_port(cell, gnd_top), dc_pad_port(cell, gnd_top)],
+        ports_a=gnd_terminals,
+        ports_b=[dc_pad_port(cell, gnd_top, "north")] * len(gnd_terminals),
         spec=_DC_SPEC,
         strategy=_DC_STRATEGY,
         avoid_port_owners=False,
+        end_straight=end_straight,
         name="dc_gnd_head_tops",
     )
-
-    # Second head (R3A/R3B): its two east bias terminals join the same top-pad
-    # ground. Kept as its own call rather than four lanes in the one above -- the
-    # two heads sit ~750 um apart in y, so bundling them would fan across that
-    # whole gap, and this way each head's ground can be tuned on its own.
-    if second_head is not None:
-        cell.autoroute(
-            ports_a=[(second_head, "e_phase_2"), (second_head, "e_phase2_2")],
-            ports_b=[dc_pad_port(cell, gnd_top), dc_pad_port(cell, gnd_top)],
-            spec=_DC_SPEC,
-            strategy=_DC_STRATEGY,
-            avoid_port_owners=False,
-            name="dc_gnd_head2_tops",
-        )
 
     # Ground strap: every otherwise-unused pad chained up into the top-pad ground
     # (4 -> 5 -> 6 [-> 7 on R3A]), so the top pads form one contiguous ground land
@@ -267,4 +288,101 @@ def add_dc_pad_routes(cell: fw.Component, second_head: str | None = None) -> Non
             strategy=_DC_STRATEGY,
             avoid_port_owners=False,
             name="dc_gnd_pad_strap",
+        )
+
+    add_dc_gnd_rail(cell)
+    add_dc_pad_labels(cell, second_head=second_head is not None)
+
+
+def add_dc_gnd_rail(cell: fw.Component, pad_array: str = _PAD_ARRAY) -> None:
+    """Tie the array's two extreme pads together as one shared ground.
+
+    A single line from the **bottom-most** pad to the **top-most**, landing on
+    both **east** faces so it runs up the strip between the array and the die
+    edge -- the one lane with nothing in it, now that the labels stand west
+    (:func:`add_dc_pad_labels`) and every bias line lands on a west face. The
+    strap in :func:`add_dc_pad_routes` already chains the upper pads through
+    their north/south faces; this rail extends that net to the bottom of the
+    stack, so the tunable coupler's ground end (pad 0) shares the ground land
+    rather than needing its own wirebond.
+
+    A no-op on an array of fewer than two pads.
+    """
+    num_pads = dc_pad_count(cell, pad_array)
+    if num_pads < 2:
+        return
+    cell.autoroute(
+        ports_a=[dc_pad_port(cell, 0, "east", pad_array)],
+        ports_b=[dc_pad_port(cell, num_pads - 1, "east", pad_array)],
+        spec=_DC_SPEC,
+        strategy=_DC_STRATEGY,
+        avoid_port_owners=False,
+        end_straight=_DC_GND_RAIL_END_STRAIGHT,
+        name="dc_gnd_pad_rail",
+    )
+
+
+def dc_pad_label_texts(num_pads: int, second_head: bool = False) -> dict[int, str]:
+    """Label text per DC bond-pad index, from the same map :func:`add_dc_pad_routes` wires.
+
+    Indices are bottom-up, as everywhere else in this module. Naming follows the
+    layout's ``DEVICE-POSITION-FUNCTION`` convention:
+
+    ==================  ==============  ==========================================
+    Pad                 Label           Terminal
+    ==================  ==============  ==========================================
+    ``0``               TC-GND          ``e_coupler_1`` -- tunable-coupler heater,
+                                        the undriven (ground) end
+    ``1``               TC-SIG          ``e_coupler_2`` -- same heater, driven end
+    ``2``               BIAS-SIG-1      ``e_phase2_1`` -- upper TOPS phase shifter
+    ``3``               BIAS-SIG-2      ``e_phase_1``  -- lower TOPS phase shifter
+    ``4`` / ``5``       BIAS2-SIG-1/2   the second head's two west bias terminals
+                                        (R3A/R3B only, when ``second_head``)
+    rest                BIAS-GND        the strapped common-ground land, which the
+                                        heads' outer TOPS terminals land on
+    ==================  ==============  ==========================================
+
+    Every pad in the ground land carries the same text because they are the same
+    net -- strapped together by ``dc_gnd_pad_strap`` -- so a wirebond may go down
+    on any of them.
+    """
+    num_bias = _NUM_BIAS_PADS + (2 if second_head else 0)
+    texts = {0: "TC-GND", 1: "TC-SIG", 2: "BIAS-SIG-1", 3: "BIAS-SIG-2"}
+    if second_head:
+        texts[4] = "BIAS2-SIG-1"
+        texts[5] = "BIAS2-SIG-2"
+    texts.update({i: "BIAS-GND" for i in range(num_bias, num_pads)})
+    return {i: t for i, t in texts.items() if 0 <= i < num_pads}
+
+
+def add_dc_pad_labels(cell: fw.Component, second_head: bool = False) -> None:
+    """Name every DC bond pad, reading horizontally west of the array.
+
+    One horizontal label per pad, its east edge ``_DC_PAD_LABEL_GAP`` west of
+    that pad's west face and standing on the pad's bottom edge. West rather than
+    east because the strip east of the array is now the shared-ground rail's lane
+    (:func:`add_dc_gnd_rail`). Texts come from :func:`dc_pad_label_texts`.
+
+    The west faces are also where every bias line lands, so a pad's own line
+    crosses its label on the way in -- unavoidable here, and harmless: the line
+    is TOP_METAL and the label is an LN etch beneath it, the same stacking this
+    module already relies on with ``avoid_port_owners=False``.
+
+    Called at the end of :func:`add_dc_pad_routes`, so the labels cannot drift out
+    of step with the wiring they describe.
+    """
+    for i, text in dc_pad_label_texts(dc_pad_count(cell), second_head).items():
+        pad_inst, pad_port = dc_pad_port(cell, i, "west")
+        west_x = cell.instances[pad_inst].ports[pad_port].position[0]
+        south_inst, south_port = dc_pad_port(cell, i, "south")
+        pad_bottom = cell.instances[south_inst].ports[south_port].position[1]
+        add_horizontal_label(
+            cell,
+            text,
+            x_ref=west_x,
+            y_bottom=pad_bottom,
+            side="west",
+            gap=_DC_PAD_LABEL_GAP,
+            height=DC_PAD_LABEL_HEIGHT,
+            name=f"label_dc_pad_{i}",
         )

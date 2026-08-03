@@ -9,8 +9,9 @@ point (L = 75.47 um nominal) on top and a sweep around the 5/95-tap point
 
 Per DUT the intended wiring connects **three** ports to grating couplers --
 ``o2`` (input, the upper west port), ``o3`` (bar output, upper east) and ``o4``
-(cross output, lower east) -- and leaves ``o1`` (the second, unused input)
-**open**. The eight DCs are split into **two groups of four**, each with its own
+(cross output, lower east) -- while ``o1`` (the second, unused input) is
+terminated by a beam dump (:func:`dump_two_groups`) so it cannot reflect back up
+the input lane. The eight DCs are split into **two groups of four**, each with its own
 N-S grating-coupler array (``gratingcoupler_rib_sm_800nm_ext``, three couplers per
 DC) + left alignment loop, placed side by side. Each DUT is the PDK DC cell for
 its tier's split ratio (``directionalcoupler_rib_sm_800nm_ord_50_50`` / ``_5_95``)
@@ -25,7 +26,9 @@ back-to-back-MZI block east of it (see :func:`group_pitch` /
 
 Fully routed, two bundles per group: the four west couplers -> the DUT ``o2``
 inputs (:func:`add_group_input_routes`), and the DUT ``o3``/``o4`` outputs -> the
-eight remaining couplers (:func:`add_group_output_routes`).
+eight remaining couplers (:func:`add_group_output_routes`). A tier is therefore
+three passes -- :func:`place_two_groups`, :func:`route_two_groups`,
+:func:`dump_two_groups` -- all taking the same ``lengths`` / prefixes.
 """
 
 from __future__ import annotations
@@ -46,6 +49,7 @@ from picasso.leaves import make_array
 from picasso.recipe import recipe
 
 from ..parameters import parameters as _p
+from .beam_dumps import add_2x2_input_beam_dumps
 
 # Swept parallel coupling lengths (um). Two sweeps, one per tap ratio, each
 # centred on the PDK nominal for that coupler:
@@ -429,17 +433,39 @@ def route_two_groups(
         )
 
 
+def dump_two_groups(
+    cell: fw.Component, *, lengths: tuple[float, ...], dut_prefix: str = "dc_len"
+) -> list[str]:
+    """Terminate both groups' unused DUT inputs (``o1``) with PDK beam dumps.
+
+    The third pass of a tier, after :func:`place_two_groups` and
+    :func:`route_two_groups` and taking the same ``lengths`` / ``dut_prefix``. Only
+    ``_INPUT_PORT`` (``o2``) is fed, so every DUT's ``o1`` would otherwise end in a
+    bare facet reflecting back up the input lane and into the measurement -- exactly
+    what corrupts a split-ratio fit. :func:`..beam_dumps.add_2x2_input_beam_dumps`
+    reads the open port off the nets (so this must run *after* the routing pass) and
+    mirrors each dump away from the fed ``o2`` above it -- which here also points the
+    body down-and-west, into the empty band between the DUT and the next row, rather
+    than up across ``o2``'s own lane.
+    """
+    return add_2x2_input_beam_dumps(
+        cell,
+        [f"{dut_prefix}_{length:g}" for length in lengths],
+    )
+
+
 def add_dc_length_sweep(cell: fw.Component) -> None:
     """Place the single-DC coupling-length sweep on R4A -- 50/50 tier + 5/95 tier.
 
     Two stacked tiers, each two side-by-side groups of four: the 50/50 sweep
     (``_LENGTHS_5050``) at the top, and the 5/95-tap sweep (``_LENGTHS_TAP``,
     centred on the 94.38 um nominal) ``_TIER_DROP`` below it. Instances
-    ``dc_*`` (50/50) and ``tap_dc_*`` (5/95). ``o1`` is left open throughout.
+    ``dc_*`` (50/50) and ``tap_dc_*`` (5/95). Every DUT's unused ``o1`` is beam-dumped.
 
     This is sweep block ``0`` (:func:`block_x_base`), the west-most of the two. Both
     groups of both tiers are fully routed by :func:`route_two_groups` -- inputs to the
-    four west couplers, outputs to the eight remaining ones.
+    four west couplers, outputs to the eight remaining ones -- then terminated by
+    :func:`dump_two_groups`.
     """
     half_h = _p.die_height.value / 2.0
     kw = _p.keepout_width.value
@@ -454,3 +480,7 @@ def add_dc_length_sweep(cell: fw.Component) -> None:
     # DUT inputs, then the DUT outputs -> the eight remaining couplers.
     route_two_groups(cell, lengths=_LENGTHS_5050)
     route_two_groups(cell, lengths=_LENGTHS_TAP, gc_prefix="tap_dc_gc", dut_prefix="tap_dc_len")
+    # Termination pass (after routing, which is what marks o2 as fed): a beam dump on
+    # every DUT's unused o1, mirrored away from the fed o2.
+    dump_two_groups(cell, lengths=_LENGTHS_5050)
+    dump_two_groups(cell, lengths=_LENGTHS_TAP, dut_prefix="tap_dc_len")

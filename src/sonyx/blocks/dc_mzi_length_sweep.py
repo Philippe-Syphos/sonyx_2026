@@ -7,7 +7,7 @@ feed DC2's inputs with no arm straight between them). Cascading two identical
 couplers gives a bar/cross transfer that probes the coupler design more sharply
 than a single DC (and, as a balanced MZI, is less sensitive to the input/output
 coupling loss). Per DUT three ports are connected -- ``o2`` (input, upper west),
-``o3`` (bar, upper east) and ``o4`` (cross, lower east) -- and ``o1`` is left open.
+``o3`` (bar, upper east) and ``o4`` (cross, lower east) -- and ``o1`` is beam-dumped.
 
 Two stacked tiers, matching the single-DC block: the 50/50 sweep on top and the
 5/95-tap sweep (centred on the 94.38 um nominal) below it. This is **sweep block
@@ -33,6 +33,7 @@ from .dc_length_sweep import (
     _dc_dut,
     _tap_dc_dut,
     block_x_base,
+    dump_two_groups,
     place_two_groups,
     route_two_groups,
 )
@@ -80,7 +81,8 @@ def add_dc_mzi_length_sweep(cell: fw.Component) -> None:
     (``block_x_base(1)``) -- two stacked tiers (50/50 on top, 5/95 tap ``_TIER_DROP``
     below), each two side-by-side groups of four zero-arm MZIs. Instances
     ``bb_dc_*`` (50/50) and ``tap_bb_dc_*`` (5/95). Both groups of both tiers are
-    fully routed by :func:`route_two_groups` (inputs and outputs).
+    fully routed by :func:`route_two_groups` (inputs and outputs), then their unused
+    ``o1`` inputs terminated by :func:`dump_two_groups`.
     """
     half_h = _p.die_height.value / 2.0
     kw = _p.keepout_width.value
@@ -100,3 +102,8 @@ def add_dc_mzi_length_sweep(cell: fw.Component) -> None:
     route_two_groups(
         cell, lengths=_LENGTHS_TAP, gc_prefix="tap_bb_dc_gc", dut_prefix="tap_bb_dc_len"
     )
+    # Termination pass (after routing, which is what marks o2 as fed): a beam dump on
+    # every MZI's unused o1, mirrored away from the fed o2. The port is on the MZI
+    # wrapper, surfaced from its first coupler's o1.
+    dump_two_groups(cell, lengths=_LENGTHS_5050, dut_prefix="bb_dc_len")
+    dump_two_groups(cell, lengths=_LENGTHS_TAP, dut_prefix="tap_bb_dc_len")
