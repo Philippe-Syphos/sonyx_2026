@@ -154,13 +154,15 @@ class Parameters(ParametersBase):
         ),
     )
     dc_test_pad_spacing = ParameterField(
-        200.0,
+        50.0,
         units="um",
         description=(
             "Edge-to-edge gap between adjacent DC test bond pads in a "
             "test-structure pad row (e.g. the heater-bias pads on R4B). The row "
-            "pitch is the pad width plus this spacing. Distinct from the PDK's "
-            "bondpad_pitch (the die wirebond array's centre-to-centre pitch)."
+            "pitch is the pad width plus this spacing: 200 um pads + 50 um gap "
+            "= the AEPONYX automated-probe convention (200 x 200 um pads at a "
+            "250 um pitch). Distinct from the PDK's bondpad_pitch (the die "
+            "wirebond array's centre-to-centre pitch)."
         ),
     )
     dc_test_pad_row_y = ParameterField(

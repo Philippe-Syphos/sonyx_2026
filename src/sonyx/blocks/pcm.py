@@ -13,11 +13,13 @@ Cells (left to right):
                      ``gsg_short_top_metal_50ohms`` bar.
 3. ``MRR g800``   -- all-pass ring (800 nm coupler gap), GC-column I/O, rot 90.
 4. ``MRR g400``   -- all-pass ring (400 nm coupler gap), GC-column I/O, rot 90.
+5. ``bondpad row`` -- 9-pad AEPONYX probe row with the heater_cr DUT wired to
+                     the third and fourth pads (0-based pads 2-3).
 
-The DC bond-pad cells and the grating loopback have been removed pending a
-rebuild. The rings follow the buddha ring-test pattern (2-up 127 um GC column,
-ring on a folded bus) built from the ``ringresonator_allpass_rib_sm_800nm`` PDK
-cell, and the whole element is rotated 90 deg.
+The grating loopback has been removed pending a rebuild. The rings follow the
+buddha ring-test pattern (2-up 127 um GC column, ring on a folded bus) built
+from the ``ringresonator_allpass_rib_sm_800nm`` PDK cell, and the whole element
+is rotated 90 deg.
 """
 
 from __future__ import annotations
@@ -26,12 +28,21 @@ import picasso as fw
 from luqia_ln200 import pdk
 from picasso.recipe import recipe
 
+from ..parameters import parameters as _p
+
 # Layout knobs.
 _CELL_GAP = 300.0  # um, horizontal gap between adjacent PCM cells in the block
 _GSG_CLOSER = 250.0  # um, extra tightening of the open<->short GSG gap
 _RING_STACK_GAP = 25.0  # um, vertical gap between the two stacked rings
-_BONDPAD_ARRAY_GAP = 100.0  # um, gap between pads in the bond-pad array
-_HEATER_RAISE = 75.0  # um, raise of the heater_cr toward the bond-pad pair
+_BONDPAD_ARRAY_GAP = 100.0  # um, vertical gap from the pad row down to the heater
+# Probe pads in the DC row: the AEPONYX automated-probe card expects a
+# provision for 9 pads (200 x 200 um at the 250 um pitch) with every needle
+# landing on metal. The heater DUT wires to pads 2-3; the rest are unwired.
+_NUM_BONDPADS = 9
+# Raise (um) of the heater_cr toward the bond-pad row. Dropped 75 -> 25 (the
+# heater sits 50 um further south) to open vertical room for the bias routes'
+# S-jogs between the terminals and the pad faces.
+_HEATER_RAISE = 25.0
 _GC_TOWARD_GSG = 225.0  # um, shift of the ring/GC stack toward the GSG cells
 _BONDPAD_TOWARD_RING = 250.0  # um, shift of the bond-pad array toward the ring
 
@@ -126,30 +137,53 @@ def _ring_stack() -> fw.Component:
     return c
 
 
-@recipe(register_as="pcm_bondpad_1x2")
-def _bondpad_1x2() -> fw.Component:
-    """4. A 1x2 pair of DC test bond pads (long side N-S) with heater_cr below.
+@recipe(register_as="pcm_bondpad_row")
+def _bondpad_row() -> fw.Component:
+    """4. A 9-pad DC probe row (AEPONYX provision) with heater_cr below pads 2-3.
 
-    Two pads side by side, each rotated 90 deg so its long (400 um) side runs
-    N-S. A ``heater_cr`` sits below the pair, centred on it and raised
-    _HEATER_RAISE um toward the pads (no routing) -- the heater-resistor DUT.
+    ``_NUM_BONDPADS`` 200 x 200 um pads at the 250 um probe pitch, centred on
+    x=0 -- the AEPONYX 9-pad provision, so every needle of the probe card
+    lands on metal. A ``heater_cr`` sits below the row, centred between the
+    third and fourth pads (0-based pads 2-3; instances ``pad_3`` / ``pad_4``)
+    and raised _HEATER_RAISE um toward them -- the heater-resistor DUT --
+    with each terminal autorouted up to its pad's south face (e1 -> pad_3,
+    e2 -> pad_4; one call per line, the terminals face opposite ways so a
+    bundle is illegal). The other pads are unwired landing metal. Routed
+    inside this recipe, so every die shares the one wired cell.
     """
     pad = pdk.cells["bondpad_for_test_top"]()
     pad_w = pad.bbox.dy  # rotated width (native height, 200)
-    pad_h = pad.bbox.dx  # rotated height (native width, 400)
-    pitch = pad_w + _BONDPAD_ARRAY_GAP
-    xs = [-pitch / 2.0, pitch / 2.0]  # the pair, centred on x=0
+    pad_h = pad.bbox.dx  # rotated height (native width, 200)
+    pitch = pad_w + _p.dc_test_pad_spacing.value  # the AEPONYX 250 um probe pitch
+    x0 = -(_NUM_BONDPADS - 1) / 2.0 * pitch  # pad_1 centre; row centred on x=0
     c = fw.Component()
-    for i, x in enumerate(xs):
+    for i in range(_NUM_BONDPADS):
         c.add_placed(
-            pdk.cells["bondpad_for_test_top"](), name=f"pad_{i}", x=x, y=0.0, rotation=90.0
+            pdk.cells["bondpad_for_test_top"](), name=f"pad_{i + 1}",
+            x=x0 + i * pitch, y=0.0, rotation=90.0,
         )
-    # heater_cr centred between the pair, below them and raised toward them.
+    # heater_cr centred between the third and fourth pads, below the row and
+    # raised toward it.
     heater = pdk.cells["heater_cr"]()
     hb = heater.bbox
+    heater_cx = x0 + 2.5 * pitch  # midpoint of pads 3 and 4
     top_y = -pad_h / 2.0 - _BONDPAD_ARRAY_GAP + _HEATER_RAISE  # heater bbox top edge
-    # Centre the heater's bbox on x=0 (its origin is not its bbox centre).
-    c.add_placed(heater, name="heater", x=-hb.center_x, y=top_y - hb.ymax)
+    c.add_placed(heater, name="heater", x=heater_cx - hb.center_x, y=top_y - hb.ymax)
+    # Heater bias: each terminal up to its own pad's south face (the pads are
+    # rotated 90 deg, so that face is the port named "w"). e1 (west terminal)
+    # takes pad_3 and e2 takes pad_4, so the two lines don't cross. The
+    # heater sits low enough (_HEATER_RAISE) that the default planner turns
+    # the small terminal-to-face jog cleanly -- forced start/end straights
+    # overshoot the few-um x-offset in this geometry and fold the centreline,
+    # so the calls stay bare.
+    for term, pad_name in (("e1", "pad_3"), ("e2", "pad_4")):
+        c.autoroute(
+            ports_a=[("heater", term)],
+            ports_b=[(pad_name, "w")],
+            spec="routing_top_metal",
+            avoid_port_owners=False,
+            name=f"heater_bias_{term}",
+        )
     return c
 
 
@@ -169,7 +203,7 @@ def add_pcm_block(cell: fw.Component, x_right: float, y_top: float) -> None:
         (_open_gsg(), "pcm_open_gsg", 0.0),
         (_shorted_gsg(), "pcm_shorted_gsg", _CELL_GAP - _GSG_CLOSER),
         (_ring_stack(), "pcm_ring_stack", _CELL_GAP - _GC_TOWARD_GSG),
-        (_bondpad_1x2(), "pcm_bondpad_1x2", _CELL_GAP - _BONDPAD_TOWARD_RING),
+        (_bondpad_row(), "pcm_bondpad_row", _CELL_GAP - _BONDPAD_TOWARD_RING),
     ]
     total_w = sum(sub.bbox.dx + gap for sub, _, gap in entries)
     cursor = x_right - total_w

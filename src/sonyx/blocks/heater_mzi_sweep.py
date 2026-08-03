@@ -75,13 +75,18 @@ _MZI_TOP_DROP = 400.0
 _MZI_ROW_PITCH = 120.0  # vertical centre-to-centre of stacked MZIs (~76 um tall)
 
 # DC heater-bias test bond pads: a row of _NUM_DC_PADS TOP_METAL-only test pads
-# (bondpad_for_test_top, 400 x 200 um -- the heater terminals are already on
-# routing_top_metal, so no via at the pad). Rotated 90 deg so the long side runs
-# N-S (200 um E-W x 400 um N-S). Pitch = pad width + parameters.dc_test_pad_spacing.
+# (bondpad_for_test_top, 200 x 200 um per the AEPONYX probe convention -- the
+# heater terminals are already on routing_top_metal, so no via at the pad).
+# Pitch = pad width + parameters.dc_test_pad_spacing = 250 um (the convention).
 # The row centreline is parameters.dc_test_pad_row_y (shared with the other test
-# cells); the first pad's left edge aligns with the left MZI column (_LEFT_MARGIN
-# off the left inner edge).
+# cells). This block's 8 pads and the paperclip block's 4 form ONE continuous
+# 12-pad row on the 250 um grid (an AEPONYX probe card lands 9 needles at that
+# pitch, so any 9-consecutive window must be gapless metal): this row is slid
+# _PAD_ROW_EAST_SHIFT east of _LEFT_MARGIN and the paperclip pads continue the
+# grid at indices 8..11 (see :func:`dc_pad_center_x`), meeting roughly midway
+# between the two blocks' old row positions.
 _NUM_DC_PADS = 8
+_PAD_ROW_EAST_SHIFT = 650.0
 
 
 @recipe
@@ -279,28 +284,35 @@ def _add_devices(cell: fw.Component) -> None:
             cell.add_placed(mzi, name=f"heater_mzi_M{m}", x=x_in, y=y_axis0 - i * _MZI_ROW_PITCH)
 
 
-def _add_dc_pads(cell: fw.Component) -> None:
-    """Place a row of ``_NUM_DC_PADS`` TOP_METAL DC test bond pads below the array.
+def dc_pad_center_x(index: int) -> float:
+    """Centre x of pad ``index`` (0-based) on R4B's continuous 12-pad probe row.
 
-    ``bondpad_for_test_top`` (400 x 200 um, TOP_METAL only) rotated 90 deg (long
-    side N-S -> 200 um E-W x 400 um N-S) and tiled at pad width +
-    ``dc_test_pad_spacing``, the row centreline at ``parameters.dc_test_pad_row_y``
-    (shared with the other test cells). The first pad's left edge aligns with the
-    left MZI column (``_LEFT_MARGIN`` off the left inner edge). Instances
-    ``dc_pad_{i}``; placement-only (heater terminals not yet routed to them).
+    One 250 um grid shared by this block (indices 0..7) and the paperclip
+    block (8..11, via its ``_add_dc_pads``), so an AEPONYX 9-needle probe
+    card lands on gapless metal anywhere along the row. Pad 0's left edge
+    sits ``_LEFT_MARGIN + _PAD_ROW_EAST_SHIFT`` off the left inner edge.
     """
+    pad_w = bondpad_for_test_top().bbox.dy  # rotated 90 deg -> E-W width
+    pitch = pad_w + _p.dc_test_pad_spacing.value
     half_w = _p.die_width.value / 2.0
     kw = _p.keepout_width.value
-    y_row_c = _p.dc_test_pad_row_y.value
+    x0 = ((-half_w + kw) + _LEFT_MARGIN + _PAD_ROW_EAST_SHIFT) + pad_w / 2.0
+    return x0 + index * pitch
 
+
+def _add_dc_pads(cell: fw.Component) -> None:
+    """Place this block's 8 pads (row indices 0..7) of the shared 12-pad row.
+
+    ``bondpad_for_test_top`` (200 x 200 um, TOP_METAL only) on the AEPONYX
+    250 um probe grid (:func:`dc_pad_center_x`), the row centreline at
+    ``parameters.dc_test_pad_row_y``. The paperclip block continues the same
+    grid with pads 8..11. Instances ``dc_pad_{i}``.
+    """
     pad = bondpad_for_test_top()
-    # Rotated 90 deg, so the E-W width is the pad's original y-extent.
-    pad_w_rot = pad.bbox.dy
-    pitch = pad_w_rot + _p.dc_test_pad_spacing.value  # edge-to-edge gap from the layout param
-    x_center0 = ((-half_w + kw) + _LEFT_MARGIN) + pad_w_rot / 2.0  # first pad's left edge at margin
+    y_row_c = _p.dc_test_pad_row_y.value
     for i in range(_NUM_DC_PADS):
         cell.add_placed(
-            pad, name=f"dc_pad_{i + 1}", x=x_center0 + i * pitch, y=y_row_c, rotation=90.0
+            pad, name=f"dc_pad_{i + 1}", x=dc_pad_center_x(i), y=y_row_c, rotation=90.0
         )
 
 

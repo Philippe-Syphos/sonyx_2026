@@ -37,6 +37,8 @@ from picasso.leaves import make_array, make_straight
 from picasso.recipe import recipe
 
 from ..parameters import parameters as _p
+from .heater_mzi_sweep import _NUM_DC_PADS as _HEATER_NUM_DC_PADS
+from .heater_mzi_sweep import dc_pad_center_x
 
 # Fold-count sweep: paperclip arm counts (odd, >= 3).
 _NUM_ARMS: tuple[int, ...] = (3, 5, 7)
@@ -55,10 +57,11 @@ _TOP_OUT_STRAIGHT = 140.0
 # Reference up-riser x-position, this far east of the paperclip's east edge (um).
 _REF_RISER_MARGIN = 40.0
 
-# Placement: three MZIs stacked, right of the heater_cr block (its DC pads end
-# ~x -2088). Anchor x for the whole block -- the GC array, alignment loop and DC
-# pads all key off it, and the MZIs are centred on the array, so moving this one
-# value slides the entire set east/west without disturbing the centring.
+# Placement: three MZIs stacked, right of the heater_cr block. Anchor x for the
+# optical block -- the GC array and alignment loop key off it, and the MZIs are
+# centred on the array, so moving this one value slides the optical set
+# east/west without disturbing the centring. The DC pads do NOT key off it:
+# they continue the heater block's 250 um probe grid (dc_pad_center_x).
 _INPUT_X = -800.0
 _ROW_PITCH = 280.0  # vertical centre-to-centre of stacked MZIs
 
@@ -179,23 +182,20 @@ def _add_gc_array(cell: fw.Component, y_top: float) -> float:
 
 
 def _add_dc_pads(cell: fw.Component) -> None:
-    """Place ``_NUM_DC_PADS`` TOP_METAL DC test bond pads, aligned to the left cells.
+    """Place this block's 4 pads as indices 8..11 of R4B's shared 12-pad row.
 
-    ``bondpad_for_test_top`` (400 x 200 um, TOP_METAL only) rotated 90 deg so the
-    long side runs N-S (200 um E-W x 400 um N-S) -- the layout convention for DC
-    test pads -- in a row, pitch = pad width + ``dc_test_pad_spacing``, left edge
-    at ``_INPUT_X``. The row centreline is ``parameters.dc_test_pad_row_y``, shared
-    with the heater_cr block's pads so the two align. Instances
+    ``bondpad_for_test_top`` (200 x 200 um, TOP_METAL only) continuing the
+    heater block's 250 um probe grid (:func:`..heater_mzi_sweep.dc_pad_center_x`)
+    so the combined row is gapless for the AEPONYX 9-needle probe card. The
+    row centreline is ``parameters.dc_test_pad_row_y``. Instances
     ``paperclip_dc_pad_{i}``.
     """
     pad = bondpad_for_test_top()
-    pad_w_rot = pad.bbox.dy  # rotated 90 deg -> E-W width is the pad's original y-extent
-    pitch = pad_w_rot + _p.dc_test_pad_spacing.value
     y_c = _p.dc_test_pad_row_y.value
     for i in range(_NUM_DC_PADS):
         cell.add_placed(
             pad, name=f"paperclip_dc_pad_{i + 1}",
-            x=(_INPUT_X + pad_w_rot / 2.0) + i * pitch, y=y_c, rotation=90.0,
+            x=dc_pad_center_x(_HEATER_NUM_DC_PADS + i), y=y_c, rotation=90.0,
         )
 
 

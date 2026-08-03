@@ -8,10 +8,11 @@ Stacking the MZIs at increasing distance from the heater maps the thermal
 crosstalk decay delta-T(distance).
 
 Layout (top-down): GC array + alignment loop (MZI fibre I/O), the heater line,
-then ``_NUM_MZI`` balanced MZIs stacked downward. Two TOP_METAL heater-bias bond
-pads (``bondpad_for_test_top``, same as the R4B TOPS test) sit on the shared DC
-test-pad row. Placement only -- optical ports not routed to the couplers and the
-heater terminals not routed to the pads.
+then ``_NUM_MZI`` balanced MZIs stacked downward. A full 9-pad TOP_METAL probe
+row (``bondpad_for_test_top``, same as the R4B TOPS test) sits on the shared DC
+test-pad row -- the AEPONYX automated-probe provision (9 pads at the 250 um
+pitch, every needle landing on metal, first pad always used) -- with only the
+two westmost pads wired to the heater bias.
 """
 
 from __future__ import annotations
@@ -37,6 +38,12 @@ _MZI_GAP = 0.0  # gap between stacked MZI bboxes (touching); the moat isolates t
 _HEATER_SECTIONS = 10  # Cr ladder heater (~235 um active, ~100 ohm) -- the source
 _HEATER_GAP = 45.0  # gap from the bottom MZI to the heater below it
 _GC_ROW_GAP = 250.0  # gap from the GC array to the heater
+
+# Probe pads on the shared DC test-pad row: the AEPONYX automated-probe card
+# expects a provision for 9 pads (250 um pitch) with every needle landing on
+# metal and the first (westmost) pad always used -- so the heater bias takes
+# pads 1-2 and pads 3-9 are unwired landing metal.
+_NUM_DC_PADS = 9
 
 # Placement on R3A: to the right of the crossing-MZI blocks, top band.
 _TC_LEFT_MARGIN = 2050.0  # left edge off the left inner edge (+250 for routing room)
@@ -80,9 +87,11 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
 
     Top-down: GC array + alignment loop, the heater line (centred over the MZI
     arm region), then ``_NUM_MZI`` balanced MZIs stacked downward at increasing
-    distance from the heater. Two heater-bias bond pads sit on the shared DC row.
-    Placement only. Instances ``thermal_gc_align`` / ``thermal_gc_array`` /
-    ``thermal_heater`` / ``thermal_mzi_{i}`` / ``thermal_dc_pad_{1,2}``.
+    distance from the heater. A ``_NUM_DC_PADS``-pad probe row sits on the shared
+    DC row (the AEPONYX 9-pad provision); the heater bias wires to pads 1-2 and
+    the rest are unwired landing metal. Instances ``thermal_gc_align`` /
+    ``thermal_gc_array`` / ``thermal_heater`` / ``thermal_mzi_{i}`` /
+    ``thermal_dc_pad_{1..9}``.
     """
     half_w = _p.die_width.value / 2.0
     half_h = _p.die_height.value / 2.0
@@ -133,15 +142,16 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
         y=y_heater_c - hb.dy / 2.0 - hb.ymin,
     )
 
-    # Two heater-bias bond pads on the shared DC test-pad row (as on R4B TOPS),
-    # rotated 90 deg (long side N-S). The pair is **centred** on the heater above
-    # it (which is itself centred on the GC array / MZI stack), so the two bias
-    # routes drop symmetrically instead of running diagonally off to one side.
+    # The 9-pad probe row on the shared DC test-pad row (as on R4B TOPS). The
+    # two **wired** pads (1-2) stay centred on the heater above them (which is
+    # itself centred on the GC array / MZI stack), so the two bias routes drop
+    # symmetrically; the unwired provision pads (3-9) continue the 250 um pitch
+    # eastward.
     pad = bondpad_for_test_top()
     pad_w_rot = pad.bbox.dy
     pad_pitch = pad_w_rot + _p.dc_test_pad_spacing.value
-    x_pad0 = heater_cx - pad_pitch / 2.0  # centre of the lower-x pad of the pair
-    for i in range(2):
+    x_pad0 = heater_cx - pad_pitch / 2.0  # centre of pad 1 (westmost, always used)
+    for i in range(_NUM_DC_PADS):
         cell.add_placed(
             pad,
             name=f"thermal_dc_pad_{i + 1}",
