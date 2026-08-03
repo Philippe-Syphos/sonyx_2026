@@ -14,6 +14,9 @@ work progresses (per-die state, open items, first-step check).
 ## 2. Workflow & conventions
 - **cwd resets between shell calls** — always `cd /Users/philippe/Github/sonyx_2026` first.
 - Build: `uv run python -m sonyx.artifacts` -> `layout_artifacts/sonyx.gds`.
+  Add `--blackbox` to also write `sonyx_blackbox.gds` (IP-protected: flagged PDK
+  devices become frame+name+port stubs on BLACKBOX 99/0+99/2; routing/pads/topology
+  stay real). Sticky: once present it refreshes on every plain run; delete to opt out.
 - Keep green: `uv run ruff check src/sonyx` && `uv run ty check src/sonyx` (line length
   100, ASCII). PDK is **not** clean at baseline — only add *no new* ruff/ty errors (type
   new PDK helpers properly; assert `min_spacing is not None`, etc.).
