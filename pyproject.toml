@@ -25,6 +25,11 @@ dev = [
     "ty>=0.0.14",
 ]
 
+# Both sources are pinned to the sonyx-2026-v0.1 snapshot tags so that a
+# fresh clone of this repo at v0.1.0 reproduces the preliminary
+# submission: `uv run python -m sonyx.artifacts` resolves the exact PDK
+# and framework commits the layout was built with. No machine-local
+# paths.
 [tool.uv.sources]
-luqia_ln200 = { path = "/Users/philippe/Github/pdk-luqia-ln200", editable = true }
-picasso = { path = "/Users/philippe/Github/picasso-pdk-dev/picasso", editable = true }
+luqia_ln200 = { git = "https://github.com/SyphosPhotonics/pdk-luqia-ln200.git", tag = "sonyx-2026-v0.1" }
+picasso = { git = "https://github.com/SyphosPhotonics/picasso.git", tag = "sonyx-2026-v0.1" }
