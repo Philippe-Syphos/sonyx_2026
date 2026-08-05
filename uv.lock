@@ -58,9 +58,19 @@ wheels = [
 [[package]]
 name = "luqia-ln200"
 version = "0.1.0"
-source = { git = "https://github.com/SyphosPhotonics/pdk-luqia-ln200.git?tag=sonyx-2026-v0.1#1f218980d68ddab0921c0892db5626c922731f32" }
+source = { editable = "../pdk-luqia-ln200" }
 dependencies = [
     { name = "picasso" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "picasso", editable = "../picasso" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.4" },
+    { name = "ruff", specifier = ">=0.14" },
+    { name = "ty", specifier = ">=0.0.14" },
 ]
 
 [[package]]
@@ -200,7 +210,7 @@ wheels = [
 [[package]]
 name = "picasso"
 version = "0.1.0"
-source = { git = "https://github.com/SyphosPhotonics/picasso.git?tag=sonyx-2026-v0.1#c2097dea2debe2630933e7afb355c83258e0acac" }
+source = { editable = "../picasso" }
 dependencies = [
     { name = "klayout" },
     { name = "msgpack" },
@@ -208,6 +218,40 @@ dependencies = [
     { name = "pyyaml" },
     { name = "scipy" },
     { name = "xarray" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", marker = "extra == 'gui'", specifier = ">=0.115" },
+    { name = "kaleido", marker = "extra == 'testing'", specifier = ">=0.2.1" },
+    { name = "klayout", specifier = ">=0.30.6" },
+    { name = "msgpack", specifier = ">=1.1.0" },
+    { name = "numpy", specifier = ">=2.3.1" },
+    { name = "pillow", marker = "extra == 'image'", specifier = ">=10" },
+    { name = "plotly", marker = "extra == 'testing'", specifier = ">=5.24" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "scipy", specifier = ">=1.16.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'gui'", specifier = ">=0.35" },
+    { name = "websockets", marker = "extra == 'gui'", specifier = ">=14" },
+    { name = "xarray", specifier = ">=2025.6.1" },
+]
+provides-extras = ["gui", "image", "testing"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "kaleido", specifier = ">=0.2.1" },
+    { name = "matplotlib", specifier = ">=3.9" },
+    { name = "pillow", specifier = ">=10" },
+    { name = "plotly", specifier = ">=5.24" },
+    { name = "pre-commit", specifier = ">=4.2.0" },
+    { name = "pytest", specifier = ">=8.4.1" },
+    { name = "pytest-cov", specifier = ">=6.2.1" },
+    { name = "ruff", specifier = ">=0.14.14" },
+    { name = "ty", specifier = ">=0.0.14" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35" },
+    { name = "websockets", specifier = ">=14" },
 ]
 
 [[package]]
@@ -385,8 +429,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "luqia-ln200", git = "https://github.com/SyphosPhotonics/pdk-luqia-ln200.git?tag=sonyx-2026-v0.1" },
-    { name = "picasso", git = "https://github.com/SyphosPhotonics/picasso.git?tag=sonyx-2026-v0.1" },
+    { name = "luqia-ln200", editable = "../pdk-luqia-ln200" },
+    { name = "picasso", editable = "../picasso" },
 ]
 
 [package.metadata.requires-dev]

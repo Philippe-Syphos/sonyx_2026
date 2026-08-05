@@ -24,7 +24,7 @@ from luqia_ln200.cells.couplers import (
     gratingcoupler_rib_sm_800nm_ext,
 )
 from luqia_ln200.cells.dc import bondpad_for_test_top, heater_cr
-from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord
+from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord_6um
 from luqia_ln200.cells.waveguides import straight_rib_sm_800nm
 from picasso.component import PortSpec
 from picasso.leaves import make_array
@@ -54,7 +54,7 @@ _TC_TOP_MARGIN = 40.0  # GC tops below the top inner edge
 def _balanced_mzi_plain(arm_length: float) -> fw.Component:
     """Balanced 1x2-MMI MZI (dL = 0), plain arms -- a passive thermal sensor.
 
-    Two ``mmi_1x2_rib_sm_800nm_ord`` splitters back-to-back; each output is fanned
+    Two ``mmi_1x2_rib_sm_800nm_ord_6um`` splitters back-to-back; each output is fanned
     apart by an S-bend (top up, bottom down) into an ``arm_length`` plain
     straight, then fanned back for the combiner. No heater -- the arms sense an
     external thermal gradient (top arm warmer than bottom when a heater sits
@@ -63,14 +63,14 @@ def _balanced_mzi_plain(arm_length: float) -> fw.Component:
     sbw = sbend_rib_sm_800nm()
     arm = straight_rib_sm_800nm(length=arm_length)
     cell = fw.Component()
-    mi = cell.add_placed(mmi_1x2_rib_sm_800nm_ord(), name="mmi_in")
+    mi = cell.add_placed(mmi_1x2_rib_sm_800nm_ord_6um(), name="mmi_in")
     su = cell.put(sbw, (mi.name, "o2"), port_to="o1", name="splay_up")
     sd = cell.put(sbw, (mi.name, "o3"), port_to="o1", name="splay_dn", mirror=True)
     ta = cell.put(arm, (su.name, "o2"), port_to="o1", name="top_arm")
     ba = cell.put(arm, (sd.name, "o2"), port_to="o1", name="bot_arm")
     fu = cell.put(sbw, (ta.name, "o2"), port_to="o1", name="fan_up", mirror=True)
     fd = cell.put(sbw, (ba.name, "o2"), port_to="o1", name="fan_dn")
-    mo = cell.put(mmi_1x2_rib_sm_800nm_ord(), (fu.name, "o2"), port_to="o3", name="mmi_out")
+    mo = cell.put(mmi_1x2_rib_sm_800nm_ord_6um(), (fu.name, "o2"), port_to="o3", name="mmi_out")
     cell.connect((fd.name, "o2"), (mo.name, "o2"))
     cell.add_port("o1", (mi.name, "o1"))
     cell.add_port("o2", (mo.name, "o1"))

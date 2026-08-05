@@ -199,9 +199,10 @@ def die_r3b() -> fw.Component:
         x=(right_inner - _SSM_CUTBACK_RIGHT_MARGIN) - sc.xmax,
         y=(top_inner - _SSM_CUTBACK_TOP_MARGIN) - sc.ymax,
     )
-    # Balanced-bridge crosstalk MZIs (moved here from R3A): six self-contained
-    # blocks in two rows of three along the top band -- the MMI variations on top,
-    # the tapered ones below -- each with its own 4-coupler GC array + alignment loop.
+    # Balanced-bridge crosstalk MZIs (moved here from R3A): four self-contained
+    # blocks in two rows along the top band -- the three MMI variations on top,
+    # the single (vendored, fixed-geometry) tapered one below -- each with its
+    # own 4-coupler GC array + alignment loop.
     add_crossing_mzis(cell)
     # Each block's west grating coupler -> that bridge's west input port.
     add_crossing_mzi_gc_routes(cell)

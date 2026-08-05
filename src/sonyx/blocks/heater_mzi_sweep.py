@@ -36,7 +36,7 @@ from luqia_ln200.cells.couplers import (
     gratingcoupler_rib_sm_800nm_ext,
 )
 from luqia_ln200.cells.dc import bondpad_for_test_top, heater_cr
-from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord
+from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord_6um
 from luqia_ln200.cells.waveguides import straight_rib_sm_800nm
 from picasso.leaves import make_array
 from picasso.recipe import recipe
@@ -120,7 +120,7 @@ def _heated_arm(sections: int) -> fw.Component:
 def _balanced_mzi_tops(sections: int) -> fw.Component:
     """Balanced 1x2-MMI MZI with a ``sections``-M ladder heater on the top arm.
 
-    Two ``mmi_1x2_rib_sm_800nm_ord`` splitters back-to-back; the outputs are
+    Two ``mmi_1x2_rib_sm_800nm_ord_6um`` splitters back-to-back; the outputs are
     fanned apart by a wide S-bend per arm (top up, bottom down) so the heater
     clears the lower arm, then fanned back for the combiner. The top arm is a
     :func:`_heated_arm` (WG + heater); the bottom arm is a plain WG of the
@@ -128,8 +128,8 @@ def _balanced_mzi_tops(sections: int) -> fw.Component:
     comes from the heater. Ports: ``o1`` (input, west) / ``o2`` (output, east) /
     ``e1``/``e2`` (heater terminals). Built via ``put()`` -- every abutment a Net.
     """
-    mmi_in = mmi_1x2_rib_sm_800nm_ord()
-    mmi_out = mmi_1x2_rib_sm_800nm_ord()
+    mmi_in = mmi_1x2_rib_sm_800nm_ord_6um()
+    mmi_out = mmi_1x2_rib_sm_800nm_ord_6um()
     sbw = sbend_rib_sm_800nm_wide()
     top = _heated_arm(sections)
     active = top.parameters.heater_active_length_um.value

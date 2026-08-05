@@ -11,16 +11,17 @@ cross arm returns ``_ARM_DN`` (after a short ``_CROSS_DIP`` first leg), so
 crosstalk is read from the balanced-port / carrier-port ratio, immune to common-
 mode loss; the small differential arm loss enters only as a fractional error.
 
-Six test-cell blocks on R3B in **two rows** of three, each a single bridge with
+Four test-cell blocks on R3B in **two rows**, each a single bridge with
 **its own** GC array (``_GC_PER_MZI`` couplers) and alignment loop:
 
 - **top row -- MMI variations** -- three bridges sweeping the MMI bar length
   (``length_scale`` in :data:`_MMI_LENGTH_SCALES`, detuning the self-imaging).
-- **bottom row -- tapered variations** -- three bridges sweeping the tapered
-  collimation factor (``m`` in :data:`_TAPERED_M`, the widened-width sweet spot).
+- **bottom row -- tapered** -- a single bridge on the vendored Sonyx tapered
+  crossing (fixed geometry -- the old collimation-``m`` sweep has no knob left
+  to sweep).
 
-One crossing family per row, so a row reads as a single sweep. Both rows share the
-same left margin and block pitch, so the variations line up column-wise.
+One crossing family per row. Both rows share the same left margin and block
+pitch, so the tapered block lines up under the first MMI column.
 
 :func:`add_crossing_mzis` is placement; :func:`add_crossing_mzi_gc_routes` wires all
 four bridge ports (both X1 inputs and both X2 outputs) to that block's four grating
@@ -56,18 +57,16 @@ _ARM_EB = 110.0  # cross-arm middle (east) leg
 _CROSS_DIP = 75.0  # visible straight out of X1.o3
 _BEND_SETBACK = 50.0  # Euler L-bend corner setback consumed per leg (o2 at (50, 50))
 
-# Geometry-variation sweeps (BOE): MMI imaging-length detuning, tapered m.
+# Geometry-variation sweep (BOE): MMI imaging-length detuning. The tapered
+# crossing is vendored fixed geometry -- one block, no sweep.
 _MMI_LENGTH_SCALES: tuple[float, ...] = (0.9, 1.0, 1.1)
-_TAPERED_M: tuple[float, ...] = (3.0, 4.0, 5.0)
 
 # Instance / cell names, one per variation -- the single source of truth shared by
 # the placement pass and the routing pass (which addresses blocks by name only).
 _MMI_ROW: tuple[str, ...] = tuple(
     f"crossing_mzi_mmi_s{round(s * 100):d}" for s in _MMI_LENGTH_SCALES
 )
-_TAPERED_ROW: tuple[str, ...] = tuple(
-    f"crossing_mzi_tapered_m{round(m * 10):d}" for m in _TAPERED_M
-)
+_TAPERED_ROW: tuple[str, ...] = ("crossing_mzi_tapered",)
 
 # Placement on R3B (top band): six self-contained blocks in two rows of three (MMI
 # on top, tapered below), each one MZI under its own GC array + alignment loop.
@@ -132,9 +131,9 @@ def crossing_mzi_mmi(length_scale: float = 1.0) -> fw.Component:
 
 
 @recipe
-def crossing_mzi_tapered(m: float = 4.0) -> fw.Component:
-    """Balanced-bridge crosstalk MZI with tapered crossings at collimation ``m``."""
-    return _balanced_bridge(pdk.cells["crossing_tapered_rib_sm_800nm"](m=m))
+def crossing_mzi_tapered() -> fw.Component:
+    """Balanced-bridge crosstalk MZI with the vendored (fixed) tapered crossings."""
+    return _balanced_bridge(pdk.cells["crossing_tapered_rib_sm_800nm"]())
 
 
 def _place_block(
@@ -177,15 +176,15 @@ def _place_block(
 
 
 def add_crossing_mzis(cell: fw.Component) -> None:
-    """Place the six crosstalk-MZI variation blocks on R3B, in two rows of three.
+    """Place the four crosstalk-MZI blocks on R3B, in two rows.
 
     Each variation is its **own** block -- one balanced bridge under its own
     ``_GC_PER_MZI``-coupler GC array plus alignment loop. The three **MMI**
     variations fill the top row (tops ``_BLOCK_TOP_MARGIN`` below the keep-out inner
-    north wall) and the three **tapered** ones the row ``_BLOCK_ROW_GAP`` below it,
-    each row laid left to right from the same ``_BLOCK_LEFT_MARGIN``. Splitting the
-    families into their own rows halves the band's width -- the single six-wide row
-    ran east under the SSM cutback cell.
+    north wall) and the single **tapered** block sits the row ``_BLOCK_ROW_GAP``
+    below it, each row laid left to right from the same ``_BLOCK_LEFT_MARGIN``.
+    Splitting the families into their own rows halves the band's width -- a
+    single row ran east under the SSM cutback cell.
 
     Placement only; :func:`add_crossing_mzi_gc_routes` adds the input routes.
     """
@@ -200,10 +199,7 @@ def add_crossing_mzis(cell: fw.Component) -> None:
             (name, crossing_mzi_mmi(length_scale=s))
             for name, s in zip(_MMI_ROW, _MMI_LENGTH_SCALES, strict=True)
         ],
-        [
-            (name, crossing_mzi_tapered(m=m))
-            for name, m in zip(_TAPERED_ROW, _TAPERED_M, strict=True)
-        ],
+        [(name, crossing_mzi_tapered()) for name in _TAPERED_ROW],
     )
     # The cell name doubles as the instance prefix, so each block's couplers and
     # alignment loop get unique instance names.
@@ -248,11 +244,11 @@ def add_crossing_mzi_gc_routes(cell: fw.Component) -> None:
     inside the ~85 um channel west of the block and the ~180 um band between the block
     top and the coupler array, neither of which fits the default bend.
 
-    **One autoroute call per connection** -- four per block, twenty-four in all. The
+    **One autoroute call per connection** -- four per block, sixteen in all. The
     four target ports point four different ways (west / north / south / east) and a
     bundle needs every lane to share an outward heading, so they cannot be grouped; the
-    six blocks are separate cells hundreds of um apart with no shared trunk either.
-    Every line is planned against one shared obstacle set holding all six bridge cells
+    four blocks are separate cells hundreds of um apart with no shared trunk either.
+    Every line is planned against one shared obstacle set holding all four bridge cells
     plus the ``add_routes`` live rule, so a line bends around the devices and around
     whatever has already been routed rather than merging with it.
 

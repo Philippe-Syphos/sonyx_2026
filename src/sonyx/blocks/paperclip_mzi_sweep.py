@@ -32,7 +32,7 @@ from luqia_ln200.cells.couplers import (
 )
 from luqia_ln200.cells.dc import bondpad_for_test_top
 from luqia_ln200.cells.modulators import paperclip_tops_rib_sm_800nm
-from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord
+from luqia_ln200.cells.splitters import mmi_1x2_rib_sm_800nm_ord_6um
 from picasso.leaves import make_array, make_straight
 from picasso.recipe import recipe
 from picasso.routing import ObstacleSet
@@ -117,7 +117,7 @@ def _paperclip_mzi(num_arms: int) -> fw.Component:
     leg = lbend.ports["o2"].position[0]  # 90 deg bend leg (= dx = dy)
 
     cell = fw.Component()
-    mi = cell.add_placed(mmi_1x2_rib_sm_800nm_ord(), name="mmi_in")
+    mi = cell.add_placed(mmi_1x2_rib_sm_800nm_ord_6um(), name="mmi_in")
     # Top arm: up-riser -> paperclip -> output straight -> output MMI (mate its
     # o3, so the free port o2 is the LOWER combiner input).
     t1 = cell.put(lbend, (mi.name, "o2"), port_to="o1", name="t_lb1")
@@ -127,7 +127,7 @@ def _paperclip_mzi(num_arms: int) -> fw.Component:
     t3 = cell.put(lbend, (t2.name, "o2"), port_to="o1", name="t_lb2", mirror=True)
     tp = cell.put(pc, (t3.name, "o2"), port_to="o1", name="paperclip")
     ts = cell.put(_straight(_TOP_OUT_STRAIGHT), (tp.name, "o2"), port_to="o1", name="t_str2")
-    mo = cell.put(mmi_1x2_rib_sm_800nm_ord(), (ts.name, "o2"), port_to="o3", name="mmi_out")
+    mo = cell.put(mmi_1x2_rib_sm_800nm_ord_6um(), (ts.name, "o2"), port_to="o3", name="mmi_out")
 
     pcb = cell.instances["paperclip"].bbox
     assert pcb is not None
