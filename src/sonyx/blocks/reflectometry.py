@@ -170,9 +170,7 @@ def add_reflectometry_routes(cell: fw.Component, obstacles: ObstacleSet | None =
             ("reflecto_gc_array", "o1_r0_c0"),
             ("reflecto_gc_array", "o1_r0_c1"),
         ],
-        obstacles=obstacles,
         spec="routing_sm_tight",
-        strategy="grid_astar",
-        step=10.0,
+        strategy="vgraph_rect",
         name="reflecto_gc_wg",
     )
