@@ -24,9 +24,9 @@ from luqia_ln200.cells.couplers import (
     gratingcoupler_rib_sm_800nm_ext,
 )
 from luqia_ln200.cells.waveguides import (
-    spiral_rib_sm_800nm_for_length,
-    spiral_rib_ssm_800nm_for_length,
-    spiral_rib_ull_horizontal_800nm_for_length,
+    spiral_rib_sm_800nm,
+    spiral_rib_ssm_800nm,
+    spiral_rib_ull_horizontal_800nm,
     taper_rib_sm_to_ssm_linear_800nm,
 )
 from picasso.leaves import make_array
@@ -195,14 +195,14 @@ def test_waveguide_cutback_sm(extra_coupler_gap: float = 0.0) -> fw.Component:
     """SM waveguide-loss (cutback) test cell — SM-rib delay spirals.
 
     See :func:`_build_cutback`. Delay spirals are
-    :func:`spiral_rib_sm_800nm_for_length` (``_SM_SPIRAL_N_LOOPS`` loops).
+    :func:`spiral_rib_sm_800nm` (``_SM_SPIRAL_N_LOOPS`` loops).
     ``extra_coupler_gap`` raises the coupler row (spirals unchanged) -- used on
     R3A to lift the SM grating array onto the ULL array's line while the SM
     spirals stay interleaved below. Built with ``reverse=True`` (longest spiral
     at the top), matching the ULL and SSM twins.
     """
     return _build_cutback(
-        spiral_rib_sm_800nm_for_length,
+        spiral_rib_sm_800nm,
         _SM_SPIRAL_N_LOOPS,
         reverse=True,
         extra_coupler_gap=extra_coupler_gap,
@@ -214,13 +214,13 @@ def test_waveguide_cutback_ull() -> fw.Component:
     """ULL waveguide-loss (cutback) test cell — ULL-horizontal delay spirals.
 
     Structural twin of :func:`test_waveguide_cutback_sm`; the delay spirals are
-    :func:`spiral_rib_ull_horizontal_800nm_for_length` (``_ULL_SPIRAL_N_LOOPS``
+    :func:`spiral_rib_ull_horizontal_800nm` (``_ULL_SPIRAL_N_LOOPS``
     loops), whose long horizontal arms ride the low-loss ULL ridge while ports
     stay SM. Built with ``reverse=True`` (longest spiral at the top) so that,
     placed mirrored on the right of the SM cell, the two imbricate.
     """
     return _build_cutback(
-        spiral_rib_ull_horizontal_800nm_for_length, _ULL_SPIRAL_N_LOOPS, reverse=True
+        spiral_rib_ull_horizontal_800nm, _ULL_SPIRAL_N_LOOPS, reverse=True
     )
 
 
@@ -229,12 +229,12 @@ def test_waveguide_cutback_ssm() -> fw.Component:
     """SSM (super-single-mode) waveguide-loss (cutback) test cell.
 
     Structural twin of :func:`test_waveguide_cutback_sm`; the delay spirals are
-    :func:`spiral_rib_ssm_800nm_for_length` (``_SSM_SPIRAL_N_LOOPS`` loops) on the
+    :func:`spiral_rib_ssm_800nm` (``_SSM_SPIRAL_N_LOOPS`` loops) on the
     weakly-confined SSM ridge. Built with ``reverse=True`` (longest spiral at the
     top -> short at the bottom, long at the top -- inverted in y vs the SM cell).
     """
     return _build_cutback(
-        spiral_rib_ssm_800nm_for_length, _SSM_SPIRAL_N_LOOPS, reverse=True
+        spiral_rib_ssm_800nm, _SSM_SPIRAL_N_LOOPS, reverse=True
     )
 
 

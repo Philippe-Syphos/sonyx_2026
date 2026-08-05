@@ -113,7 +113,7 @@ per-cell leading gaps):
 - Removed earlier: open-DC pair, dc-short, grating loopback, all labels.
 
 **Per-die loss spiral:** `test_spiral_sm` in `die_scaffold` — a single SM
-`spiral_rib_sm_800nm_for_length(target_length=50000, n_loops=8)` (5 cm, 8
+`spiral_rib_sm_800nm(target_length=50000, n_loops=8)` (5 cm, 8
 loops, long side E-W, footprint ~2725×290 µm), placed 100 µm east of the
 rightmost circuit edge coupler, inside the bottom keepout.
 

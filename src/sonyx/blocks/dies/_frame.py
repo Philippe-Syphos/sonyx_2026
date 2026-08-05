@@ -26,7 +26,7 @@ from luqia_ln200.cells.couplers import gratingcoupler_alignment_rib_sm_800nm_ext
 from luqia_ln200.cells.dc import bonding_pad
 from luqia_ln200.cells.fiducials import fiducial_cross_stepped_moat_labels
 from luqia_ln200.cells.labels import label_moat_labels
-from luqia_ln200.cells.waveguides import spiral_rib_sm_800nm_for_length
+from luqia_ln200.cells.waveguides import spiral_rib_sm_800nm
 from picasso.component import PortSpec
 from picasso.geometry.ops import rectangle
 
@@ -241,7 +241,7 @@ def die_scaffold(
             )
         # Single SM loss/delay spiral (3 cm, long side E-W) just east of the
         # rightmost circuit edge coupler, sitting inside the bottom keep-out.
-        spiral = spiral_rib_sm_800nm_for_length(
+        spiral = spiral_rib_sm_800nm(
             target_length=_SPIRAL_TEST_LENGTH, n_loops=_SPIRAL_N_LOOPS
         )
         sp_bb = spiral.bbox

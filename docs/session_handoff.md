@@ -63,7 +63,7 @@ work progresses (per-die state, open items, first-step check).
   helpers `dc_length_sweep.place_two_groups/_add_group/group_gc_width`.
 - **Sonyx params**: `parameters.py` — `dc_test_pad_spacing`=200, `dc_test_pad_row_y`=1242.
 - **PDK cells** (luqia): `waveguides.py` (`straight_rib_ssm_800nm`,
-  `spiral_rib_ssm_800nm_for_length`); `resonators.py` (`racetrack_allpass_rib_sm_800nm` —
+  `spiral_rib_ssm_800nm`); `resonators.py` (`racetrack_allpass_rib_sm_800nm` —
   Euler-L-bend loop + bend point coupler); `cells/__init__.py` registers the racetrack.
 
 ## 5. Physics/design decisions locked
