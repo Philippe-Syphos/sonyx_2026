@@ -102,8 +102,7 @@ def _route_couplers(cell: fw.Component) -> None:
             ports_b=[("couplers", f"o1_r0_c{i}") for i in cols],
             obstacles=obs,
             spec="routing_sm_tight",
-            strategy="grid_astar",
-            step=10.0,
+            strategy="vgraph_rect",
             name=f"{side}_gc_bundle",
         )
 
