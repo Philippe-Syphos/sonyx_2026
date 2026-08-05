@@ -211,7 +211,7 @@ class Parameters(ParametersBase):
         ),
     )
     thermistance_bonding_pad_height = ParameterField(
-        500.0,
+        650.0,
         units="um",
         description=(
             "Height of the thermistance bonding pad."
