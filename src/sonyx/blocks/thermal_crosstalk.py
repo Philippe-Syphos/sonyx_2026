@@ -45,10 +45,6 @@ _GC_ROW_GAP = 250.0  # gap from the GC array to the heater
 # pads 1-2 and pads 3-9 are unwired landing metal.
 _NUM_DC_PADS = 9
 
-# Placement on R3A: to the right of the crossing-MZI blocks, top band.
-_TC_LEFT_MARGIN = 2050.0  # left edge off the left inner edge (+250 for routing room)
-_TC_TOP_MARGIN = 40.0  # GC tops below the top inner edge
-
 
 @recipe
 def _balanced_mzi_plain(arm_length: float) -> fw.Component:
@@ -82,25 +78,29 @@ def _balanced_mzi_plain(arm_length: float) -> fw.Component:
     return cell
 
 
-def add_thermal_crosstalk(cell: fw.Component) -> None:
-    """Place the thermal-crosstalk cell on R3A, right of the crossing MZIs.
+@recipe
+def thermal_crosstalk_block() -> fw.Component:
+    """The thermal-crosstalk test as one self-contained block.
+
+    Local frame: x = 0 on the alignment loop's west edge, y = 0 on the GC/loop
+    tops line (the block's top-left content anchor); the probe row sits
+    ``parameters.dc_test_pad_drop`` below the top. The die places this single
+    Component with ``add_placed``.
 
     Top-down: GC array + alignment loop, the heater line (centred over the MZI
     arm region), then ``_NUM_MZI`` balanced MZIs stacked downward at increasing
     distance from the heater. A ``_NUM_DC_PADS``-pad probe row sits on the shared
-    DC row (the AEPONYX 9-pad provision); the heater bias wires to pads 1-2 and
-    the rest are unwired landing metal. Instances ``thermal_gc_align`` /
+    DC row drop (the AEPONYX 9-pad provision); the heater bias wires to pads 1-2
+    and the rest are unwired landing metal. Instances ``thermal_gc_align`` /
     ``thermal_gc_array`` / ``thermal_heater`` / ``thermal_mzi_{i}`` /
     ``thermal_dc_pad_{1..9}``.
     """
-    half_w = _p.die_width.value / 2.0
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
+    cell = fw.Component()
     pitch = _p.grating_coupling_pitch_for_tests.value
     gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
 
-    x_left = (-half_w + kw) + _TC_LEFT_MARGIN
-    y_top = (half_h - kw) - _TC_TOP_MARGIN
+    x_left = 0.0
+    y_top = 0.0
 
     # GC array (2 per MZI) + alignment loop, tops at y_top.
     loop = gratingcoupler_alignment_rib_sm_800nm_ext()
@@ -156,7 +156,7 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
             pad,
             name=f"thermal_dc_pad_{i + 1}",
             x=x_pad0 + i * pad_pitch,
-            y=_p.dc_test_pad_row_y.value,
+            y=-_p.dc_test_pad_drop.value,
             rotation=90.0,
         )
 
@@ -214,3 +214,11 @@ def add_thermal_crosstalk(cell: fw.Component) -> None:
             name=f"thermal_heater_bias_{term}",
             avoid_port_owners=False,
         )
+
+    cell.cell_type = "test_structure"
+    cell.description = (
+        "Thermal-crosstalk test block: a Cr ladder heater with 5 balanced-MZI "
+        "thermometers stacked below it, GC fibre I/O and a 9-pad DC probe "
+        "row, fully wired."
+    )
+    return cell

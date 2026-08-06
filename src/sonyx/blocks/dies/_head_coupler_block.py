@@ -251,11 +251,12 @@ def add_top2_gc_routes(
     """Route the extra top modulator's 4 open grating couplers to its head and DC.
 
     The fibre I/O counterpart of :func:`add_head_input_routes` (coupler -> head
-    input) and :func:`add_dc_output_to_ec_routes` (output DC -> couplers), with the
-    top-right ``{gc_prefix}_array`` (:func:`..gc_test_array.add_open_gc_array`,
-    ports ``o1_r0_c0..c3`` facing **south**) standing in for the circuit edge
-    couplers. All four channels are used -- the block has one 2x2 head (two inputs)
-    and one output DC (two outputs):
+    input) and :func:`add_dc_output_to_ec_routes` (output DC -> couplers), with
+    the top-right ``{gc_prefix}`` open-GC-array block
+    (:func:`..gc_test_array.open_gc_array_block`, exposed ports ``o1_r0_c0..c3``
+    facing **south**) standing in for the circuit edge couplers. All four
+    channels are used -- the block has one 2x2 head (two inputs) and one output
+    DC (two outputs):
 
     - the **two western** couplers (``c0`` / ``c1``) feed the head's inputs, which
       face east after the 180 deg rotation (``o1`` / ``o2``);
@@ -277,7 +278,7 @@ def add_top2_gc_routes(
     """
     head = "test_modulator_head_top2"
     dc = "test_dc_out_top2"
-    arr = f"{gc_prefix}_array"
+    arr = gc_prefix  # the open-GC-array block instance; coupler ports exposed on it
     # Western pair -> head inputs. c0 (west) takes the upper input o1, c1 the lower
     # o2, so c1's westward leg runs below c0's descent instead of crossing it.
     cell.autoroute(
@@ -640,15 +641,16 @@ def add_dc_output_to_ec_routes(
     n = num_edge_couplers
     # Bottom output DC -> the two rightmost open edge couplers.
     cell.autoroute(
-        ports_a=[("test_dc_out_bot", "o3"), ("test_dc_out_bot", "o4")],
+        ports_a =[("test_dc_out_bot", "o3"), ("test_dc_out_bot", "o4")],
         ports_b=[
             ("edge_couplers_circuit", f"o2_r0_c{n - 5}"),
             ("edge_couplers_circuit", f"o2_r0_c{n - 6}"),
         ],
         obstacles=obstacles,
         spec="routing_sm_default",
-        strategy="vgraph_rect",
-        start_straight=50.0,
+        strategy="grid_astar",
+        step=30.0,
+        # start_straight=50.0,
         end_straight=200.0,
         name="dc_ec_bot",
     )

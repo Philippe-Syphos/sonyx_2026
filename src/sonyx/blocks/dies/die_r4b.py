@@ -12,10 +12,10 @@ from luqia_ln200 import pdk
 from ...parameters import DieParametersMultimode
 from ...parameters import parameters as _p
 from ..dc_routing import add_dc_pad_routes
-from ..heater_mzi_sweep import add_heater_mzi_sweep
+from ..heater_mzi_sweep import heater_mzi_sweep_block
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
-from ..mzi_ladder import add_mzi_ladder
-from ..paperclip_mzi_sweep import add_paperclip_mzi_sweep
+from ..mzi_ladder import mzi_ladder_block
+from ..paperclip_mzi_sweep import paperclip_mzi_sweep_block
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
@@ -25,6 +25,13 @@ from ._head_coupler_block import (
     add_mzm_input_routes,
     add_mzm_output_routes,
 )
+
+# Die-level anchor of the test-block band: the first (heater) block's local
+# origin -- its alignment loop's west edge / GC tops line -- goes this far east
+# of the left inner edge and below the top inner edge. The other test blocks
+# chain off it by bbox abutment, so these two knobs slide the whole band.
+_TEST_BLOCK_LEFT_MARGIN = 1250.0
+_TEST_BLOCK_TOP_MARGIN = 40.0
 
 
 def die_r4b() -> fw.Component:
@@ -143,17 +150,45 @@ def die_r4b() -> fw.Component:
     # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
     # west-facing U-turn stub). Shared helper.
     add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
-    # Unbalanced-MZI n_eff / n_g calibration ladder (ord + ext, 6 MZIs) across
-    # the clear top band, with two constant-pitch N-S grating-coupler arrays
-    # (one per orientation group). Placement only -- not routed yet.
-    add_mzi_ladder(cell)
+    # --- test-block band (clear top strip of the die) ---
+    # Three self-contained, fully wired test blocks, packed west->east by bbox
+    # abutment: each block's top-left corner lands on its west neighbour's
+    # top-right corner. Only the heater block is placed at die coordinates;
+    # the rest chain off it, so the band re-packs itself when a block's
+    # footprint changes.
+    half_w = _p.die_width.value / 2.0
+    kw = _p.keepout_width.value
     # Thermo-optic phase-shifter test: 6 balanced 1x2-MMI MZIs with a swept
-    # heater active length (top-left GC array + alignment loop, MZIs stacked
-    # below). Placement only.
-    add_heater_mzi_sweep(cell)
+    # heater active length (GC arrays + alignment loops on top, MZIs stacked
+    # below, 8-pad DC probe row).
+    heater_block = cell.add_placed(
+        heater_mzi_sweep_block(),
+        name="heater_mzi_sweep",
+        x=(-half_w + kw) + _TEST_BLOCK_LEFT_MARGIN,
+        y=(half_h - kw) - _TEST_BLOCK_TOP_MARGIN,
+    )
     # Paperclip-TOPS test: 3 MZIs (num_arms 3/5/7) with a folded thermo-optic
-    # phase shifter on one arm, L-bend risers, right of the heater_cr block.
-    add_paperclip_mzi_sweep(cell)
+    # phase shifter on one arm, L-bend risers, 4-pad DC probe row. The two
+    # blocks' pad rows meet on one gapless 250 um probe grid: each cell pins
+    # its row to its own bbox edge (heater: last pad 150 um inside its east
+    # edge; paperclip: first pad 100 um inside its west edge), so plain
+    # corner-on-corner abutment continues the grid.
+    paperclip_block = cell.add_aligned(
+        paperclip_mzi_sweep_block(),
+        heater_block,
+        anchor="top_left",
+        to="top_right",
+        name="paperclip_mzi_sweep",
+    )
+    # Unbalanced-MZI n_eff / n_g calibration ladder (ord + ext, 6 MZIs) with
+    # two constant-pitch N-S grating-coupler arrays (one per orientation group).
+    cell.add_aligned(
+        mzi_ladder_block(),
+        paperclip_block,
+        anchor="top_left",
+        to="top_right",
+        name="mzi_ladder",
+    )
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads

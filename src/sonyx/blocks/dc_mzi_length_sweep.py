@@ -24,15 +24,12 @@ from __future__ import annotations
 import picasso as fw
 from picasso.recipe import recipe
 
-from ..parameters import parameters as _p
 from .dc_length_sweep import (
     _LENGTHS_5050,
     _LENGTHS_TAP,
     _TIER_DROP,
-    _TOP_MARGIN,
     _dc_dut,
     _tap_dc_dut,
-    block_x_base,
     dump_two_groups,
     place_two_groups,
     route_two_groups,
@@ -74,26 +71,28 @@ def _bb_tap_dc_mzi(coupling_length: float) -> fw.Component:
     return _bb_dc_mzi(coupling_length, tap=True)
 
 
-def add_dc_mzi_length_sweep(cell: fw.Component) -> None:
-    """Place the back-to-back-MZI sweep on R4A -- 50/50 tier + 5/95 tier.
+@recipe
+def dc_mzi_length_sweep_block() -> fw.Component:
+    """The back-to-back-MZI coupling-length sweep as one self-contained block.
 
-    Sweep block ``1`` -- east of the single-DC block on the shared grating grid
-    (``block_x_base(1)``) -- two stacked tiers (50/50 on top, 5/95 tap ``_TIER_DROP``
-    below), each two side-by-side groups of four zero-arm MZIs. Instances
-    ``bb_dc_*`` (50/50) and ``tap_bb_dc_*`` (5/95). Both groups of both tiers are
-    fully routed by :func:`route_two_groups` (inputs and outputs), then their unused
-    ``o1`` inputs terminated by :func:`dump_two_groups`.
+    Local frame: x = 0 on group "a"'s alignment-loop west edge, y = 0 on the
+    GC/loop tops line. The die places this at
+    :func:`~sonyx.blocks.dc_length_sweep.block_x_base` (block 1) -- east of
+    the single-DC block on the shared grating grid.
+
+    Two stacked tiers (50/50 on top, 5/95 tap ``_TIER_DROP`` below), each two
+    side-by-side groups of four zero-arm MZIs. Instances ``bb_dc_*`` (50/50) and
+    ``tap_bb_dc_*`` (5/95). Both groups of both tiers are fully routed by
+    :func:`route_two_groups` (inputs and outputs), then their unused ``o1``
+    inputs terminated by :func:`dump_two_groups`.
     """
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
-    x_base = block_x_base(1)
-    y1 = (half_h - kw) - _TOP_MARGIN
+    cell = fw.Component()
     place_two_groups(
-        cell, lengths=_LENGTHS_5050, x_base=x_base, y_top=y1,
+        cell, lengths=_LENGTHS_5050, x_base=0.0, y_top=0.0,
         dut_factory=_bb_dc_mzi, gc_prefix="bb_dc_gc", dut_prefix="bb_dc_len",
     )
     place_two_groups(
-        cell, lengths=_LENGTHS_TAP, x_base=x_base, y_top=y1 - _TIER_DROP,
+        cell, lengths=_LENGTHS_TAP, x_base=0.0, y_top=-_TIER_DROP,
         dut_factory=_bb_tap_dc_mzi, gc_prefix="tap_bb_dc_gc", dut_prefix="tap_bb_dc_len",
     )
     # Routing pass: per group, the four west couplers -> the MZI inputs, then the MZI
@@ -107,3 +106,10 @@ def add_dc_mzi_length_sweep(cell: fw.Component) -> None:
     # wrapper, surfaced from its first coupler's o1.
     dump_two_groups(cell, lengths=_LENGTHS_5050, dut_prefix="bb_dc_len")
     dump_two_groups(cell, lengths=_LENGTHS_TAP, dut_prefix="tap_bb_dc_len")
+    cell.cell_type = "test_structure"
+    cell.description = (
+        "Back-to-back-coupler (zero-arm MZI) coupling-length sweep test block: "
+        "8 MZIs in two tiers (50/50 + 5/95 tap), GC fibre I/O, fully wired and "
+        "beam-dumped."
+    )
+    return cell

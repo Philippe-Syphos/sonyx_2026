@@ -11,8 +11,8 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
-from ..dc_length_sweep import add_dc_length_sweep
-from ..dc_mzi_length_sweep import add_dc_mzi_length_sweep
+from ..dc_length_sweep import block_x_base, dc_length_sweep_block
+from ..dc_mzi_length_sweep import dc_mzi_length_sweep_block
 from ..dc_routing import add_dc_pad_routes
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
 from ._frame import die_scaffold
@@ -24,6 +24,12 @@ from ._head_coupler_block import (
     add_mzm_input_routes,
     add_mzm_output_routes,
 )
+
+# Die-level y anchor of the test-block band: each block's top (its GC/loop tops
+# line, local y = 0) sits this far below the top inner edge. The x anchors come
+# from dc_length_sweep.block_x_base, which keeps both blocks' couplers on one
+# grating grid.
+_TEST_BLOCK_TOP_MARGIN = 40.0
 
 
 def die_r4a() -> fw.Component:
@@ -145,13 +151,22 @@ def die_r4a() -> fw.Component:
     # Output DCs -> the open circuit edge couplers (bottom DC -> two rightmost open,
     # top DC -> next two, via a west-facing U-turn stub). Shared helper.
     add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
-    # # Directional-coupler coupling-length test: 8 DCs (L sweep) + GC array,
-    # top-left. Placed, plus the top-left group's four inputs bundled to its four
-    # west couplers (tight SM spec); o3/o4 and the other groups routed later, o2 open.
-    add_dc_length_sweep(cell)
-    # Back-to-back-coupler MZI (zero-arm) coupling-length test: same sweep/layout,
-    # placed to the right of the single-DC sweep. Placement-only.
-    add_dc_mzi_length_sweep(cell)
+    # --- test-block band (clear top strip of the die) ---
+    # Two self-contained, fully wired sweep blocks; block 1's x derives from
+    # block 0's via block_x_base so the whole band's couplers stay on one
+    # continuous grating grid.
+    kw = _p.keepout_width.value
+    y_test_top = (half_h - kw) - _TEST_BLOCK_TOP_MARGIN
+    # Directional-coupler coupling-length test: 8 single DCs in two tiers
+    # (50/50 + 5/95 tap) with GC fibre I/O, fully wired and beam-dumped.
+    cell.add_placed(
+        dc_length_sweep_block(), name="dc_length_sweep", x=block_x_base(0), y=y_test_top
+    )
+    # Back-to-back-coupler MZI (zero-arm) coupling-length test: same
+    # sweep/layout, east of the single-DC block on the shared grating grid.
+    cell.add_placed(
+        dc_mzi_length_sweep_block(), name="dc_mzi_length_sweep", x=block_x_base(1), y=y_test_top
+    )
     # DC bias routing on TOP_METAL (first test of the routing_top_metal spec):
     # the modulator head's tunable-coupler west terminal -> DC bond pad 0.
     add_dc_pad_routes(cell)

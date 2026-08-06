@@ -38,14 +38,6 @@ _CHAIN_STACK_GAP = 120.0  # um, vertical gap between adjacent stacked chains
 _COUPLER_ROW_GAP = 200.0  # um, gap from the GC array bottom to the chain stack top
 _CHAIN_DROP = 40.0  # um, extra downward shift of the chain stack (widens the gap)
 
-# Placement on R2A: both blocks sit to the right of the racetrack sweep, MMI on
-# top and tapered below. The left margin clears the widest racetrack (which ends
-# ~2.2 mm right of the left inner edge); the top line matches the racetracks'.
-_BLOCK_LEFT_MARGIN = 2550.0  # stack left edge off the left inner edge
-_BLOCK_TOP_MARGIN = 140.0  # GC tops below the top inner edge
-_BLOCK_GAP = 150.0  # vertical gap between the MMI (top) and tapered (bottom) blocks
-
-
 def _route_couplers(cell: fw.Component) -> None:
     """Wire every chain end to a grating coupler -- **one autoroute call per side**.
 
@@ -198,29 +190,3 @@ def crossing_cutback_mmi() -> fw.Component:
 def crossing_cutback_tapered() -> fw.Component:
     """Tapered-crossing insertion-loss cutback (3 chains, N in ``_COUNTS``). See module."""
     return _build_crossing_cutback("crossing_tapered_rib_sm_800nm")
-
-
-def add_crossing_cutbacks(cell: fw.Component) -> None:
-    """Place the MMI (top) and tapered (bottom) crossing cutback blocks on R2A.
-
-    Both blocks are left-aligned ``_BLOCK_LEFT_MARGIN`` off the left inner edge
-    (clearing the racetrack sweep), the MMI block's GC tops ``_BLOCK_TOP_MARGIN``
-    below the top inner edge and the tapered block ``_BLOCK_GAP`` beneath it.
-    Instances ``cutback_mmi`` / ``cutback_tapered``. Each block carries its own
-    west-half fibre routing (see :func:`_route_west_couplers`); the chain east
-    ends are still unrouted.
-    """
-    half_w = _p.die_width.value / 2.0
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
-    x_left = (-half_w + kw) + _BLOCK_LEFT_MARGIN
-    y_top = (half_h - kw) - _BLOCK_TOP_MARGIN
-
-    mmi = crossing_cutback_mmi()
-    mb = mmi.bbox
-    cell.add_placed(mmi, name="cutback_mmi", x=x_left - mb.xmin, y=y_top - mb.ymax)
-
-    tap = crossing_cutback_tapered()
-    tb = tap.bbox
-    y_top_tap = (y_top - mb.dy) - _BLOCK_GAP
-    cell.add_placed(tap, name="cutback_tapered", x=x_left - tb.xmin, y=y_top_tap - tb.ymax)

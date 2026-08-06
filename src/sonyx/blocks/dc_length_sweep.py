@@ -29,6 +29,13 @@ inputs (:func:`add_group_input_routes`), and the DUT ``o3``/``o4`` outputs -> th
 eight remaining couplers (:func:`add_group_output_routes`). A tier is therefore
 three passes -- :func:`place_two_groups`, :func:`route_two_groups`,
 :func:`dump_two_groups` -- all taking the same ``lengths`` / prefixes.
+
+The whole sweep is one self-contained Component (:func:`dc_length_sweep_block`)
+built in its own local frame -- origin at the block's top-left content anchor
+(group "a" alignment loop west edge, GC/loop tops line). The die
+(``dies/die_r4a.py``) places it with ``add_placed`` at :func:`block_x_base`
+(block 0), which is what keeps the whole R4A top band's couplers on one
+grating grid.
 """
 
 from __future__ import annotations
@@ -71,8 +78,7 @@ _ALIGN_GC = 2
 
 # Layout (um). Each group: GC array north (left loop + couplers) with its 4 DCs
 # stacked below, inputs (o2) aligned on the group's input column.
-_LEFT_MARGIN = 1750.0  # first group's left edge off the left inner edge
-_TOP_MARGIN = 40.0  # coupler/loop tops below the top inner edge
+_LEFT_MARGIN = 1750.0  # die-level: block 0's left edge off the left inner edge
 _GC_TO_DC_GAP = 120.0  # GC array bottom down to the top DC
 _DC_ROW_PITCH = 120.0  # vertical centre-to-centre of stacked DCs
 _TIER_DROP = 750.0  # vertical drop from the 50/50 tier to the 5/95 tier below it
@@ -140,12 +146,13 @@ def group_pitch() -> float:
 def block_x_base(block_index: int) -> float:
     """Left edge (um) of sweep block ``block_index``, in the die frame.
 
-    Block ``0`` is the single-DC sweep (:func:`add_dc_length_sweep`), block ``1`` the
-    back-to-back-MZI sweep (:func:`~sonyx.blocks.dc_mzi_length_sweep`). Blocks tile
-    west to east at ``_NUM_GROUPS`` whole :func:`group_pitch` steps, which is what
-    keeps the grating grid continuous *between* blocks as well as within them -- so
-    the MZI block's position is derived here rather than carrying its own margin
-    (an independent margin silently drifts off the grid).
+    The die-level ``add_placed`` x anchor: block ``0`` is the single-DC sweep
+    (:func:`dc_length_sweep_block`), block ``1`` the back-to-back-MZI sweep
+    (:func:`~sonyx.blocks.dc_mzi_length_sweep.dc_mzi_length_sweep_block`). Blocks
+    tile west to east at ``_NUM_GROUPS`` whole :func:`group_pitch` steps, which is
+    what keeps the grating grid continuous *between* blocks as well as within them
+    -- so the MZI block's position is derived here rather than carrying its own
+    margin (an independent margin silently drifts off the grid).
     """
     half_w = _p.die_width.value / 2.0
     x0 = (-half_w + _p.keepout_width.value) + _LEFT_MARGIN
@@ -454,26 +461,26 @@ def dump_two_groups(
     )
 
 
-def add_dc_length_sweep(cell: fw.Component) -> None:
-    """Place the single-DC coupling-length sweep on R4A -- 50/50 tier + 5/95 tier.
+@recipe
+def dc_length_sweep_block() -> fw.Component:
+    """The single-DC coupling-length sweep as one self-contained block.
+
+    Local frame: x = 0 on group "a"'s alignment-loop west edge, y = 0 on the
+    GC/loop tops line. The die places this at :func:`block_x_base` (block 0).
 
     Two stacked tiers, each two side-by-side groups of four: the 50/50 sweep
     (``_LENGTHS_5050``) at the top, and the 5/95-tap sweep (``_LENGTHS_TAP``,
     centred on the 94.38 um nominal) ``_TIER_DROP`` below it. Instances
     ``dc_*`` (50/50) and ``tap_dc_*`` (5/95). Every DUT's unused ``o1`` is beam-dumped.
 
-    This is sweep block ``0`` (:func:`block_x_base`), the west-most of the two. Both
-    groups of both tiers are fully routed by :func:`route_two_groups` -- inputs to the
-    four west couplers, outputs to the eight remaining ones -- then terminated by
-    :func:`dump_two_groups`.
+    Both groups of both tiers are fully routed by :func:`route_two_groups` --
+    inputs to the four west couplers, outputs to the eight remaining ones -- then
+    terminated by :func:`dump_two_groups`.
     """
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
-    x_base = block_x_base(0)
-    y1 = (half_h - kw) - _TOP_MARGIN
-    place_two_groups(cell, lengths=_LENGTHS_5050, x_base=x_base, y_top=y1)
+    cell = fw.Component()
+    place_two_groups(cell, lengths=_LENGTHS_5050, x_base=0.0, y_top=0.0)
     place_two_groups(
-        cell, lengths=_LENGTHS_TAP, x_base=x_base, y_top=y1 - _TIER_DROP,
+        cell, lengths=_LENGTHS_TAP, x_base=0.0, y_top=-_TIER_DROP,
         dut_factory=_tap_dc_dut, gc_prefix="tap_dc_gc", dut_prefix="tap_dc_len",
     )
     # Routing pass, one bundle per group per direction: the four west couplers -> the
@@ -484,3 +491,10 @@ def add_dc_length_sweep(cell: fw.Component) -> None:
     # every DUT's unused o1, mirrored away from the fed o2.
     dump_two_groups(cell, lengths=_LENGTHS_5050)
     dump_two_groups(cell, lengths=_LENGTHS_TAP, dut_prefix="tap_dc_len")
+    cell.cell_type = "test_structure"
+    cell.description = (
+        "Directional-coupler coupling-length sweep test block: 8 single DCs in "
+        "two tiers (50/50 + 5/95 tap), GC fibre I/O, fully wired and "
+        "beam-dumped."
+    )
+    return cell

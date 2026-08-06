@@ -161,5 +161,18 @@ def add_dc_pad_routes(cell: fw.Component, second_head: str | None = None) -> Non
         spec=_DC_SPEC,
         strategy=_DC_STRATEGY,
         avoid_port_owners=False,
+        end_straight=30.0,
         name="dc_bias_phase2",
+    )
+
+    # Strap I0 (coupler common ground) up to I3 (phase "_1" common) on their east
+    # faces, so the run sits in the gap between the two columns and stays clear of
+    # the I1/I2 signal pads it passes. Ties the two common nets into one land.
+    cell.autoroute(
+        ports_a=[dc_pad_port(cell, "I", 0, "e")],
+        ports_b=[dc_pad_port(cell, "I", 3, "e")],
+        spec=_DC_SPEC,
+        strategy=_DC_STRATEGY,
+        avoid_port_owners=False,
+        name="dc_strap_i0_i3",
     )

@@ -20,7 +20,7 @@ from luqia_ln200.tech.parameters import parameters as _pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
-from ..crossing_mzi import add_crossing_mzi_gc_routes, add_crossing_mzis
+from ..crossing_mzi import crossing_mzi_sweep_block
 from ..dc_routing import add_dc_pad_routes
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
 from ._frame import die_scaffold
@@ -37,6 +37,13 @@ from .test_cells_die_r1a import test_waveguide_cutback_ssm
 # SSM cutback: gaps (um) from the die inner edges to the (right-pushed) cell.
 _SSM_CUTBACK_RIGHT_MARGIN = 250.0
 _SSM_CUTBACK_TOP_MARGIN = 40.0
+
+# Die-level anchor of the crossing-MZI sweep block (its local origin is row 0's
+# alignment-loop west edge / GC tops line): margins off the left / top inner
+# edges. Left was 100, then +100 to clear overlap, then 200 -> 320 to clear the
+# north-edge reference edge coupler (see the placement comment in die_r3b).
+_CROSSING_MZI_LEFT_MARGIN = 320.0
+_CROSSING_MZI_TOP_MARGIN = 40.0
 
 # Extra head-to-head spacing (um) on this die (mirrors R3A).
 _EXTRA_HEAD_SPACING = 100.0
@@ -199,13 +206,19 @@ def die_r3b() -> fw.Component:
         x=(right_inner - _SSM_CUTBACK_RIGHT_MARGIN) - sc.xmax,
         y=(top_inner - _SSM_CUTBACK_TOP_MARGIN) - sc.ymax,
     )
-    # Balanced-bridge crosstalk MZIs (moved here from R3A): four self-contained
+    # Balanced-bridge crosstalk MZI sweep (moved here from R3A): four variation
     # blocks in two rows along the top band -- the three MMI variations on top,
     # the single (vendored, fixed-geometry) tapered one below -- each with its
-    # own 4-coupler GC array + alignment loop.
-    add_crossing_mzis(cell)
-    # Each block's west grating coupler -> that bridge's west input port.
-    add_crossing_mzi_gc_routes(cell)
+    # own 4-coupler GC array + alignment loop, fully wired inside the block.
+    # Left margin 320 clears the north-edge reference edge coupler the scaffold
+    # parks in the top-left corner (edge_coupler_north, east moat edge ~ -5087)
+    # by ~107 um.
+    cell.add_placed(
+        crossing_mzi_sweep_block(),
+        name="crossing_mzi_sweep",
+        x=(-right_inner) + _CROSSING_MZI_LEFT_MARGIN,
+        y=top_inner - _CROSSING_MZI_TOP_MARGIN,
+    )
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads

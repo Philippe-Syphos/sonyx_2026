@@ -45,7 +45,7 @@ class Parameters(ParametersBase):
         description="Full reticle edge — square, 22 mm (the complete top cell).",
     )
     dicing_lane = ParameterField(
-        150.0,
+        200.0,
         units="um",
         description=(
             "Width of the deep-etch dicing street between adjacent dies and "
@@ -54,19 +54,19 @@ class Parameters(ParametersBase):
         ),
     )
     die_width = ParameterField(
-        10775.0,
+        10700.0,
         units="um",
         description=(
             "Per-die width = (reticle_size - (DIE_COLUMNS+1)·dicing_lane) / DIE_COLUMNS "
-            "= (22000 - 3·150) / 2. Pinned; validated by _check_tiling()."
+            "= (22000 - 3·200) / 2. Pinned; validated by _check_tiling()."
         ),
     )
     die_height = ParameterField(
-        5312.5,
+        5250.0,
         units="um",
         description=(
             "Per-die height = (reticle_size - (DIE_ROWS+1)·dicing_lane) / DIE_ROWS "
-            "= (22000 - 5·150) / 4. Pinned; validated by _check_tiling()."
+            "= (22000 - 5·200) / 4. Pinned; validated by _check_tiling()."
         ),
     )
     keepout_width = ParameterField(
@@ -176,6 +176,19 @@ class Parameters(ParametersBase):
             "blocks above it."
         ),
     )
+    dc_test_pad_drop = ParameterField(
+        1443.0,
+        units="um",
+        description=(
+            "Drop from a self-contained test block's top anchor (its GC/loop "
+            "tops line, local y = 0) down to the block's DC test-pad row "
+            "centreline. Shared by the R4B heater and paperclip MZI blocks so "
+            "their rows stay co-linear when the blocks are top-aligned at die "
+            "assembly. Chosen so a block placed at the standard 40 um top "
+            "margin lands its row on the historical dc_test_pad_row_y = 1092 "
+            "(die top inner edge 2575 - 40 - 1443 = 1092)."
+        ),
+    )
     gsg_modulator_spacing = ParameterField(
         1000.0,
         units="um",
@@ -196,7 +209,7 @@ class Parameters(ParametersBase):
         ),
     )
     gsg_modulator_electrode_length = ParameterField(
-        9395.0,
+        9295.0,
         units="um",
         description=(
             "Length of the GSG modulator electrode (phase section only, no couplers). "

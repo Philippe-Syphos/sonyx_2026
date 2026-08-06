@@ -237,11 +237,30 @@ def die_scaffold(
             # alignment loop, aligned to the array (same identical coupler+lead
             # unit) — an extra reference facet beside the loopback.
             extra = circuit_edge_coupler_array(1)
+            extra_x = (left_x - arr_bb.xmin) - _p.edge_coupling_pitch_for_circuits.value
             cell.add_placed(
                 extra,
                 name="edge_coupler_extra",
-                x=(left_x - arr_bb.xmin) - _p.edge_coupling_pitch_for_circuits.value,
+                x=extra_x,
                 y=facet_y - arr_bb.ymin,
+            )
+            # Its counterpart on the **north** die edge: the same coupler unit
+            # rotated 180 deg, on the same vertical axis and facing it. The
+            # southern one is the array's spare (nothing is wired to its circuit
+            # port), so the pair reads as one through-die axis — facet on the
+            # bottom edge, facet on the top edge, circuit ports looking at each
+            # other — leaving the option of joining them later without moving
+            # either facet. rotation=180 maps local (x, y) -> (X - x, Y - y), so
+            # the anchors below mirror the extra coupler's footprint in x and put
+            # this facet edge_coupler_protrusion past the **top** die edge.
+            north = circuit_edge_coupler_array(1)
+            nb = north.bbox
+            cell.add_placed(
+                north,
+                name="edge_coupler_north",
+                x=extra_x + nb.xmin + nb.xmax,
+                y=(half_h + _p.edge_coupler_protrusion.value) + nb.ymin,
+                rotation=180.0,
             )
         # Single SM loss/delay spiral (3 cm, long side E-W) just east of the
         # rightmost circuit edge coupler, sitting inside the bottom keep-out.
@@ -483,3 +502,4 @@ def place_thermistance_pad_west_of(
     tb = therm.bbox
     assert tb is not None  # placed instances always have geometry
     therm.move((west - gap) - tb.xmax, top - tb.ymax)
+

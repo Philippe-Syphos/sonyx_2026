@@ -12,7 +12,7 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..dc_routing import add_dc_pad_routes
-from ..gsg_termination_sweep import add_gsg_termination_sweep
+from ..gsg_termination_sweep import gsg_termination_sweep_block
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
 from ._frame import die_scaffold
 from ._head_coupler_block import (
@@ -24,6 +24,11 @@ from ._head_coupler_block import (
     add_mzm_output_routes,
 )
 from .test_cells_die_r1a import place_cutback_top_right, test_waveguide_cutback_sm
+
+# Die-level anchor of the termination-sweep block (its local origin is row 0's
+# DUT left edges / tops): margins off the left / top inner edges.
+_TERMINATION_LEFT_MARGIN = 320.0
+_TERMINATION_TOP_MARGIN = 60.0
 
 
 def die_r2b() -> fw.Component:
@@ -147,9 +152,19 @@ def die_r2b() -> fw.Component:
     # and orientation as the ULL cutback on R3A.
     place_cutback_top_right(cell, test_waveguide_cutback_sm(), "test_waveguide_cutback_sm")
     # GSG termination-resistance sweep (7 probeable lumped-terminator DUTs,
-    # 25-75 ohm + nominal 50 ohm) in a single row along the top-left edge.
-    # Moved here from R1A.
-    add_gsg_termination_sweep(cell)
+    # 25-75 ohm + nominal 50 ohm) in two rows, top-left. Moved here from R1A.
+    # Left margin 320 opens clearance to the north-edge reference edge coupler
+    # the scaffold parks in the top-left corner (edge_coupler_north, east moat
+    # edge ~ -5087): the first DUT's west edge sits ~107 um east of it,
+    # matching the crossing-MZI block's clearance on R3B.
+    half_w = _p.die_width.value / 2.0
+    kw = _p.keepout_width.value
+    cell.add_placed(
+        gsg_termination_sweep_block(),
+        name="gsg_termination_sweep",
+        x=(-half_w + kw) + _TERMINATION_LEFT_MARGIN,
+        y=(half_h - kw) - _TERMINATION_TOP_MARGIN,
+    )
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads

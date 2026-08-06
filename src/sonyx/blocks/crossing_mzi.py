@@ -23,9 +23,13 @@ Four test-cell blocks on R3B in **two rows**, each a single bridge with
 One crossing family per row. Both rows share the same left margin and block
 pitch, so the tapered block lines up under the first MMI column.
 
-:func:`add_crossing_mzis` is placement; :func:`add_crossing_mzi_gc_routes` wires all
-four bridge ports (both X1 inputs and both X2 outputs) to that block's four grating
-couplers, one coupler per port.
+The whole sweep is one self-contained Component
+(:func:`crossing_mzi_sweep_block`) built in its own local frame -- origin at
+the top-left content anchor (row 0's alignment-loop west edge, GC tops line).
+The die (``dies/die_r3b.py``) places that single instance with ``add_placed``.
+Inside the block, :func:`add_crossing_mzis` is placement and
+:func:`add_crossing_mzi_gc_routes` wires all four bridge ports (both X1 inputs
+and both X2 outputs) to each block's four grating couplers, one per port.
 """
 
 from __future__ import annotations
@@ -68,10 +72,8 @@ _MMI_ROW: tuple[str, ...] = tuple(
 )
 _TAPERED_ROW: tuple[str, ...] = ("crossing_mzi_tapered",)
 
-# Placement on R3B (top band): six self-contained blocks in two rows of three (MMI
-# on top, tapered below), each one MZI under its own GC array + alignment loop.
-_BLOCK_LEFT_MARGIN = 200.0  # off the left inner edge (was 100; +100 to clear overlap)
-_BLOCK_TOP_MARGIN = 40.0
+# Sub-block tiling (block-local): two rows of variation blocks (MMI on top,
+# tapered below), each one MZI under its own GC array + alignment loop.
 _BLOCK_CELL_GAP = 140.0  # horizontal gap between adjacent blocks
 _BLOCK_ROW_GAP = 150.0  # vertical gap between the MMI row and the tapered row
 _GC_ROW_GAP = 120.0  # gap from a GC array to its MZI
@@ -176,23 +178,20 @@ def _place_block(
 
 
 def add_crossing_mzis(cell: fw.Component) -> None:
-    """Place the four crosstalk-MZI blocks on R3B, in two rows.
+    """Place the four crosstalk-MZI variation blocks in two rows (block-local).
 
-    Each variation is its **own** block -- one balanced bridge under its own
+    Each variation is its **own** sub-block -- one balanced bridge under its own
     ``_GC_PER_MZI``-coupler GC array plus alignment loop. The three **MMI**
-    variations fill the top row (tops ``_BLOCK_TOP_MARGIN`` below the keep-out inner
-    north wall) and the single **tapered** block sits the row ``_BLOCK_ROW_GAP``
-    below it, each row laid left to right from the same ``_BLOCK_LEFT_MARGIN``.
-    Splitting the families into their own rows halves the band's width -- a
-    single row ran east under the SSM cutback cell.
+    variations fill the top row (tops on the block's local y = 0 line) and the
+    single **tapered** block sits the row ``_BLOCK_ROW_GAP`` below it, each row
+    laid left to right from local x = 0. Splitting the families into their own
+    rows halves the band's width -- a single row ran east under the SSM cutback
+    cell.
 
     Placement only; :func:`add_crossing_mzi_gc_routes` adds the input routes.
     """
-    half_w = _p.die_width.value / 2.0
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
-    x_left = (-half_w + kw) + _BLOCK_LEFT_MARGIN
-    y_top = (half_h - kw) - _BLOCK_TOP_MARGIN
+    x_left = 0.0
+    y_top = 0.0
 
     rows = (
         [
@@ -289,3 +288,27 @@ def add_crossing_mzi_gc_routes(cell: fw.Component) -> None:
                 strategy="vgraph_euclid",
                 name=f"{name}_gc_{port}",
             )
+
+
+@recipe
+def crossing_mzi_sweep_block() -> fw.Component:
+    """The crossing-crosstalk MZI geometry sweep as one self-contained block.
+
+    Local frame: x = 0 on row 0's alignment-loop west edge, y = 0 on its GC
+    tops line (the block's top-left content anchor). The die places this
+    single Component with ``add_placed``.
+
+    Content: the four balanced-bridge variation blocks in two rows
+    (:func:`add_crossing_mzis`) with every bridge port wired to its own GC
+    array (:func:`add_crossing_mzi_gc_routes`).
+    """
+    cell = fw.Component()
+    add_crossing_mzis(cell)
+    add_crossing_mzi_gc_routes(cell)
+    cell.cell_type = "test_structure"
+    cell.description = (
+        "Balanced-bridge crossing-crosstalk MZI sweep test block: three "
+        "MMI-length variations + one tapered bridge, each under its own GC "
+        "array, fully wired."
+    )
+    return cell

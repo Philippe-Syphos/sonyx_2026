@@ -22,9 +22,14 @@ Each device (built purely from PDK cells via ``put()``):
 
 Fibre I/O is a single constant-pitch N-S grating-coupler array
 (``gratingcoupler_rib_sm_800nm_ext``, input from the north) + a fibre-alignment
-loop, in the die's top-left corner -- same convention as the other test cells.
-The MZIs stack vertically below the array. Placement-only: the MZI optical ports
-are not routed to the couplers, and the heater terminals are not routed to pads.
+loop -- same convention as the other test cells. The MZIs stack vertically below
+the array.
+
+The whole test is one self-contained Component (:func:`heater_mzi_sweep_block`)
+built in its own local frame -- origin at the block's top-left content anchor,
+i.e. x = 0 on the alignment loop's west edge and y = 0 on the GC/loop tops line.
+The die (``dies/die_r4b.py``) places that single instance with ``add_placed`` /
+``add_aligned``; nothing here knows die coordinates.
 """
 
 from __future__ import annotations
@@ -53,14 +58,6 @@ _HEATER_SECTIONS: tuple[int, ...] = (4, 8, 12, 16, 20, 24)
 _GC_PER_MZI = 2
 _NUM_MZI = len(_HEATER_SECTIONS)
 
-# Gaps (um) from the die inner edges (past the 50 um keepout) to the GC array:
-# the alignment loop's left edge sits _LEFT_MARGIN off the left inner edge, and
-# the coupler/loop tops sit _TOP_MARGIN below the top inner edge. Both coupler
-# groups, both MZI columns and the DC pad row key off _LEFT_MARGIN, so it is the
-# single knob that slides the whole block east/west.
-_LEFT_MARGIN = 1250.0
-_TOP_MARGIN = 40.0
-
 # MZI columns (below the GC array). The couplers + MZIs split into two
 # routing groups: a left group (left loop + first coupler half + first MZI half)
 # and a right group (mid loop + second coupler half + second MZI half), so each
@@ -70,24 +67,26 @@ _RIGHT_BLOCK_GAP = 150.0  # extra x-separation of the right group from the left
 # Extra eastward offset (um) of the east MZI column only, on top of the pin to its
 # group's first real coupler (the couplers and pads do not move).
 _EAST_COLUMN_SHIFT = 350.0
-# Top MZI axis (both columns) below the top inner edge; deep enough to leave
-# routing room between the coupler line and the MZIs.
-_MZI_TOP_DROP = 400.0
+# Top MZI axis (both columns) below the block top (the GC/loop tops line, local
+# y = 0); deep enough to leave routing room between the coupler line and the MZIs.
+_MZI_TOP_DROP = 360.0
 _MZI_ROW_PITCH = 120.0  # vertical centre-to-centre of stacked MZIs (~76 um tall)
 
 # DC heater-bias test bond pads: a row of _NUM_DC_PADS TOP_METAL-only test pads
 # (bondpad_for_test_top, 200 x 200 um per the AEPONYX probe convention -- the
 # heater terminals are already on routing_top_metal, so no via at the pad).
 # Pitch = pad width + parameters.dc_test_pad_spacing = 250 um (the convention).
-# The row centreline is parameters.dc_test_pad_row_y (shared with the other test
-# cells). This block's 8 pads and the paperclip block's 4 form ONE continuous
-# 12-pad row on the 250 um grid (an AEPONYX probe card lands 9 needles at that
-# pitch, so any 9-consecutive window must be gapless metal): this row is slid
-# _PAD_ROW_EAST_SHIFT east of _LEFT_MARGIN and the paperclip pads continue the
-# grid at indices 8..11 (see :func:`dc_pad_center_x`), meeting roughly midway
-# between the two blocks' old row positions.
+# The row centreline sits parameters.dc_test_pad_drop below the block top, the
+# drop the other test blocks share so top-aligned blocks land their rows on one
+# horizontal. Pad 0's left edge is slid _PAD_ROW_EAST_SHIFT east of the block's
+# west edge. The value pins the LAST pad's centre 150 um inside the block's
+# east bbox edge (local x 3059.45, set by the east ground bundle's excursion):
+# the paperclip block pins its first pad centre 100 um inside its own west
+# bbox edge, so under the die's corner-on-corner abutment the two rows form
+# one gapless 250 um probe grid (150 + 100 = one pitch). Re-derive if the
+# block's east bbox edge moves.
 _NUM_DC_PADS = 8
-_PAD_ROW_EAST_SHIFT = 650.0
+_PAD_ROW_EAST_SHIFT = 1059.45
 
 
 @recipe
@@ -188,29 +187,27 @@ def _gc_line(num: int) -> fw.Component:
 
 
 def _gc_group_left_edges() -> tuple[float, float]:
-    """Left-edge x of the left and right coupler/MZI groups.
+    """Left-edge x of the left and right coupler/MZI groups (block-local).
 
-    The left group's left edge (the far-left alignment loop) sits ``_LEFT_MARGIN``
-    off the left inner edge. The right group (mid loop + second coupler half)
-    would continue the constant pitch immediately after the left half; it is
+    The left group's left edge (the far-left alignment loop) is the block's
+    local x = 0. The right group (mid loop + second coupler half) would
+    continue the constant pitch immediately after the left half; it is
     instead pushed a further ``_RIGHT_BLOCK_GAP`` right to separate the two
     routing groups. Both the couplers and the MZI columns anchor to these.
     """
-    half_w = _p.die_width.value / 2.0
-    kw = _p.keepout_width.value
     pitch = _p.grating_coupling_pitch_for_tests.value
     gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
     gap = pitch - gc_w  # keeps adjacent GC centres one pitch apart within a group
     loop_dx = gratingcoupler_alignment_rib_sm_800nm_ext().bbox.dx
     line_l_dx = _gc_line((_GC_PER_MZI * _NUM_MZI) // 2).bbox.dx
 
-    left_x = (-half_w + kw) + _LEFT_MARGIN
+    left_x = 0.0
     right_x = left_x + (loop_dx + gap) + (line_l_dx + gap) + _RIGHT_BLOCK_GAP
     return left_x, right_x
 
 
 def _add_gc_array(cell: fw.Component) -> None:
-    """Place the sweep's GC array + alignment loops, top-left of the die.
+    """Place the sweep's GC array + alignment loops along the block top.
 
     ``_GC_PER_MZI * _NUM_MZI`` N-S grating couplers split into two equal halves,
     each a constant-pitch group led by a fibre-alignment loop (the loop is two
@@ -218,18 +215,16 @@ def _add_gc_array(cell: fw.Component) -> None:
     first half) and a right group (mid loop + second half). Within each group the
     ``grating_coupling_pitch`` grid is continuous; the right group is offset
     ``_RIGHT_BLOCK_GAP`` further right (see :func:`_gc_group_left_edges`). All
-    coupler/loop tops sit ``_TOP_MARGIN`` below the top inner edge.
+    coupler/loop tops sit on the block's local y = 0 line.
 
     Instances: ``heater_mzi_gc_align_l`` / ``heater_mzi_gc_align_mid`` (loops)
     and ``heater_mzi_gc_array_l`` / ``heater_mzi_gc_array_r`` (the two coupler
     halves, ports ``o1_r0_cN``, left open for later routing to the MZIs).
     """
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
     pitch = _p.grating_coupling_pitch_for_tests.value
     gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
     gap = pitch - gc_w
-    y_top = (half_h - kw) - _TOP_MARGIN
+    y_top = 0.0
 
     n_total = _GC_PER_MZI * _NUM_MZI
     n_left = n_total // 2
@@ -267,9 +262,7 @@ def _add_devices(cell: fw.Component) -> None:
 
     Must run after :func:`_add_gc_array` -- it reads the placed coupler arrays.
     """
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
-    y_axis0 = (half_h - kw) - _MZI_TOP_DROP
+    y_axis0 = -_MZI_TOP_DROP
 
     split = _NUM_MZI // 2
     columns = (
@@ -285,35 +278,32 @@ def _add_devices(cell: fw.Component) -> None:
             cell.add_placed(mzi, name=f"heater_mzi_M{m}", x=x_in, y=y_axis0 - i * _MZI_ROW_PITCH)
 
 
-def dc_pad_center_x(index: int) -> float:
-    """Centre x of pad ``index`` (0-based) on R4B's continuous 12-pad probe row.
+def _dc_pad_center_x(index: int) -> float:
+    """Centre x (block-local) of pad ``index`` (0-based) on this block's probe row.
 
-    One 250 um grid shared by this block (indices 0..7) and the paperclip
-    block (8..11, via its ``_add_dc_pads``), so an AEPONYX 9-needle probe
-    card lands on gapless metal anywhere along the row. Pad 0's left edge
-    sits ``_LEFT_MARGIN + _PAD_ROW_EAST_SHIFT`` off the left inner edge.
+    A 250 um AEPONYX probe grid; pad 0's left edge sits ``_PAD_ROW_EAST_SHIFT``
+    east of the block's west edge (local x = 0).
     """
     pad_w = bondpad_for_test_top().bbox.dy  # rotated 90 deg -> E-W width
     pitch = pad_w + _p.dc_test_pad_spacing.value
-    half_w = _p.die_width.value / 2.0
-    kw = _p.keepout_width.value
-    x0 = ((-half_w + kw) + _LEFT_MARGIN + _PAD_ROW_EAST_SHIFT) + pad_w / 2.0
+    x0 = _PAD_ROW_EAST_SHIFT + pad_w / 2.0
     return x0 + index * pitch
 
 
 def _add_dc_pads(cell: fw.Component) -> None:
-    """Place this block's 8 pads (row indices 0..7) of the shared 12-pad row.
+    """Place this block's 8-pad probe row below the MZI columns.
 
     ``bondpad_for_test_top`` (200 x 200 um, TOP_METAL only) on the AEPONYX
-    250 um probe grid (:func:`dc_pad_center_x`), the row centreline at
-    ``parameters.dc_test_pad_row_y``. The paperclip block continues the same
-    grid with pads 8..11. Instances ``dc_pad_{i}``.
+    250 um probe grid (:func:`_dc_pad_center_x`), the row centreline
+    ``parameters.dc_test_pad_drop`` below the block top -- the drop the other
+    test blocks share, so top-aligned blocks land their rows on one
+    horizontal. Instances ``dc_pad_{i}``.
     """
     pad = bondpad_for_test_top()
-    y_row_c = _p.dc_test_pad_row_y.value
+    y_row_c = -_p.dc_test_pad_drop.value
     for i in range(_NUM_DC_PADS):
         cell.add_placed(
-            pad, name=f"dc_pad_{i + 1}", x=dc_pad_center_x(i), y=y_row_c, rotation=90.0
+            pad, name=f"dc_pad_{i + 1}", x=_dc_pad_center_x(i), y=y_row_c, rotation=90.0
         )
 
 
@@ -508,11 +498,12 @@ def add_heater_mzi_output_routes(cell: fw.Component, column: int) -> None:
 
     Obstacles: as the input side, plus both alignment loops and the column's own
     input bundle -- the two bundles sit in disjoint x ranges (west column: input
-    stops at ~ -3549, ``c3`` at ~ -3432; east column: ~ -2297 and ~ -2266), so
+    stops at local x ~ 501, ``c3`` at ~ 618; east column: ~ 1753 and ~ 1784), so
     listing the input bundle makes that separation explicit rather than incidental.
-    The **east** column's eastward leg reaches x ~ -1064, which clears the
-    neighbouring paperclip block (west edge ~ -800) by ~260 um -- comfortable, but
-    incidental: that block belongs to another module and is not in this set.
+    The **east** column's eastward leg reaches local x ~ 2986, near the block's
+    east bbox edge -- and since the neighbouring paperclip block is abutted to
+    this block's bbox at die assembly, such route excursions are part of the
+    footprint the abutment respects.
     """
     mzis = _column_mzis(column)  # top -> bottom
     side = "west" if column == 0 else "east"
@@ -538,13 +529,19 @@ def add_heater_mzi_output_routes(cell: fw.Component, column: int) -> None:
     )
 
 
-def add_heater_mzi_sweep(cell: fw.Component) -> None:
-    """Place the thermo-optic phase-shifter length sweep, top-left of the die.
+@recipe
+def heater_mzi_sweep_block() -> fw.Component:
+    """The thermo-optic phase-shifter length sweep as one self-contained block.
 
-    The top-left GC array + alignment loops, the ``_NUM_MZI`` balanced 1x2-MMI
-    MZIs (two columns) with swept heater length, and a row of DC heater-bias test
-    bond pads below them, then each column's heater wiring: the three ``e1``
-    signals to that column's three signal pads
+    Local frame: x = 0 on the alignment loop's west edge, y = 0 on the GC/loop
+    tops line (the block's top-left content anchor); everything else hangs
+    south-east of it. The die places this single Component with ``add_placed``
+    / ``add_aligned``.
+
+    Content: the GC array + alignment loops along the top, the ``_NUM_MZI``
+    balanced 1x2-MMI MZIs (two columns) with swept heater length, and a row of
+    DC heater-bias test bond pads below them, then each column's heater wiring:
+    the three ``e1`` signals to that column's three signal pads
     (:func:`add_heater_mzi_signal_routes`) and the three ``e2`` terminals tied to
     its shared ground pad (:func:`add_heater_mzi_ground_routes`) -- west column on
     ``dc_pad_1..4``, east column on ``dc_pad_5..8``.
@@ -557,6 +554,7 @@ def add_heater_mzi_sweep(cell: fw.Component) -> None:
     output per column: the output bundle takes the column's input bundle as an
     obstacle.
     """
+    cell = fw.Component()
     _add_gc_array(cell)
     _add_devices(cell)
     _add_dc_pads(cell)
@@ -566,3 +564,10 @@ def add_heater_mzi_sweep(cell: fw.Component) -> None:
     for column in (0, 1):
         add_heater_mzi_input_routes(cell, column)
         add_heater_mzi_output_routes(cell, column)
+    cell.cell_type = "test_structure"
+    cell.description = (
+        "Heater-length thermo-optic MZI sweep test block: 6 balanced 1x2-MMI "
+        "MZIs (Cr ladder heater, sections M=4..24) with GC fibre I/O and an "
+        "8-pad DC probe row, fully wired."
+    )
+    return cell

@@ -11,8 +11,14 @@ across devices as a self-consistency check.
 
 The racetracks stand in a column (buses on one low line, loops extending up),
 with a grating-coupler array + alignment loop to their right for fibre I/O (2
-couplers per device). :func:`add_racetrack_sweep` places the racetracks + GC
-array; :func:`add_racetrack_gc_routes` wires each bus to its coupler pair.
+couplers per device).
+
+The whole sweep is one self-contained Component (:func:`racetrack_sweep_block`)
+built in its own local frame -- origin at the block's top-left content anchor
+(stack/loop west edge, GC tops line). The die (``dies/die_r2a.py``) places that
+single instance with ``add_placed``; nothing here knows die coordinates.
+:func:`add_racetrack_gc_routes` (currently disabled) wires each bus to its
+coupler pair inside the block.
 """
 
 from __future__ import annotations
@@ -25,7 +31,6 @@ from luqia_ln200.cells.couplers import (
 )
 from picasso.leaves import make_array
 from picasso.recipe import recipe
-from picasso.routing import ObstacleSet
 
 from ..parameters import parameters as _p
 
@@ -43,8 +48,6 @@ _GAP = 0.700
 _OFFSET = 100.0  # vertical gap between stacked racetracks (routing lane)
 # Racetrack bus length -> rotated device height; trimmed so 5 devices + gaps fit the band.
 _BUS_LENGTH = 100.0
-_LEFT_MARGIN = 550.0  # stack left edge off the left inner edge (clears test_dc_out_top)
-_TOP_MARGIN = 40.0  # coupler tops below the top inner edge
 _GC_GAP = 250.0  # vertical gap from the GC row bottom to the racetrack stack top
 _GC_PER_RT = 2  # one input + one thru coupler per racetrack
 
@@ -61,26 +64,30 @@ def _gc_line(num: int) -> fw.Component:
     )
 
 
-def add_racetrack_sweep(cell: fw.Component) -> None:
-    """Place the 5-racetrack length sweep (rotated 90 deg) + GC array on R2A.
+@recipe
+def racetrack_sweep_block() -> fw.Component:
+    """The 5-racetrack length sweep (rotated 90 deg) + GC array as one block.
+
+    Local frame: x = 0 on the stack/loop west edge, y = 0 on the GC tops line
+    (the block's top-left content anchor). The die places this single Component
+    with ``add_placed``.
 
     Each racetrack is placed ``rotation=90`` (loops horizontal, bus vertical) and
     the five are stacked vertically, **left-aligned** so the uncoupled (far) Euler
-    bends line up at ``x0`` while the coupling ends (buses) staircase to the right;
+    bends line up at x = 0 while the coupling ends (buses) staircase to the right;
     adjacent devices are ``_OFFSET`` apart (vertical routing lane). Shortest at the
     top. The GC array (``_GC_PER_RT`` per racetrack) + alignment loop runs along the
-    top, left-aligned at ``x0``, and the racetrack stack hangs ``_GC_GAP`` directly
+    top, left-aligned at x = 0, and the racetrack stack hangs ``_GC_GAP`` directly
     below it. Instances ``racetrack_Ls{L}`` / ``racetrack_gc_array`` /
-    ``racetrack_gc_align``. Placement-only (buses not routed to the couplers).
+    ``racetrack_gc_align``. Placement-only (buses not routed to the couplers --
+    :func:`add_racetrack_gc_routes` is currently disabled).
     """
-    half_w = _p.die_width.value / 2.0
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
+    cell = fw.Component()
     pitch = _p.grating_coupling_pitch_for_tests.value
     gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
 
-    x0 = (-half_w + kw) + _LEFT_MARGIN
-    y_line = (half_h - kw) - _TOP_MARGIN
+    x0 = 0.0
+    y_line = 0.0
 
     def rt(length: float) -> fw.Component:
         return pdk.cells["racetrack_allpass_rib_sm_800nm"](
@@ -112,6 +119,17 @@ def add_racetrack_sweep(cell: fw.Component) -> None:
         cell.add_placed(
             r, name=f"racetrack_Ls{length:g}", x=x0 + b.ymax, y=y_bottom, rotation=90.0
         )
+
+    # Bus-to-GC fibre I/O (one tight-SM autoroute per connection, shared
+    # obstacle set) -- currently disabled, see add_racetrack_gc_routes.
+    add_racetrack_gc_routes(cell)
+    cell.cell_type = "test_structure"
+    cell.description = (
+        "Variable-length racetrack resonator sweep test block: 5 all-pass "
+        "racetracks (L_s 100-1500 um, fixed 700 nm point coupler) with a GC "
+        "array + alignment loop."
+    )
+    return cell
 
 
 def add_racetrack_gc_routes(cell: fw.Component) -> None:

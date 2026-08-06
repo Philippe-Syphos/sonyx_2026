@@ -11,9 +11,9 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
-from ..gc_test_array import add_open_gc_array
+from ..gc_test_array import open_gc_array_block
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
-from ..reflectometry import add_reflectometry_cell, add_reflectometry_routes
+from ..reflectometry import reflectometry_block
 from ._frame import die_scaffold, place_thermistance_pad_west_of
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
@@ -33,6 +33,16 @@ from ._head_coupler_block import (
 # top edge. Row-1 specific -- the other dies carry only the bottom pair. Moved
 # 150 um north (1250 -> 1100) to open up the band below it.
 _TOP2_EDGE_INSET = 1100.0
+
+# Die-level anchor of the open GC-array block (its local origin is the loop's
+# west edge / GC tops line), top-right corner: margins off the right / top
+# inner edges (clear of the top-right corner alignment loop).
+_OPEN_GC_RIGHT_MARGIN = 250.0
+_OPEN_GC_TOP_MARGIN = 40.0
+
+# Reflectometry block: its west edge off the left inner edge (vertically it is
+# centred in the band between the two lower modulators -- see the placement).
+_REFLECTO_LEFT_MARGIN = 1000.0
 
 
 def die_r1a() -> fw.Component:
@@ -111,13 +121,22 @@ def die_r1a() -> fw.Component:
     # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
     # west-facing U-turn stub). Shared helper.
     add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
-    # Open grating-coupler array (4 couplers) + left alignment loop, top-right --
-    # unrouted fibre I/O for the extra top modulator (gsg_modulator_top_2).
-    add_open_gc_array(cell, num=4, prefix="mod_top2_gc")
+    # Open grating-coupler array block (4 couplers + left alignment loop),
+    # top-right (right edge / GC tops at the standard margins) -- fibre I/O for
+    # the extra top modulator (gsg_modulator_top_2), coupler ports exposed.
+    half_w = _p.die_width.value / 2.0
+    kw = _p.keepout_width.value
+    gc_top2 = open_gc_array_block(4)
+    cell.add_placed(
+        gc_top2,
+        name="mod_top2_gc",
+        x=((half_w - kw) - _OPEN_GC_RIGHT_MARGIN) - gc_top2.bbox.xmax,
+        y=(half_h - kw) - _OPEN_GC_TOP_MARGIN,
+    )
     # R1A/R1B only: park the thermistance bonding pad just west of that array
     # instead of on the reticle-wide _THERMISTANCE_CENTER the other six dies use.
     # Must follow the array -- the pad is re-placed relative to it.
-    place_thermistance_pad_west_of(cell, ("mod_top2_gc_array", "mod_top2_gc_align"))
+    place_thermistance_pad_west_of(cell, ("mod_top2_gc",))
     # modulator_head (left) + output directional coupler (right) for the extra top
     # modulator, rotated 180 deg vs the standard block, in the band above it.
     add_top_head_and_coupler(cell, "gsg_modulator_top_2")
@@ -131,14 +150,21 @@ def die_r1a() -> fw.Component:
     # That head's heater terminals -> the four north-west DC pads.
     add_top2_dc_pad_routes(cell)
     # (The GSG termination-resistance sweep moved to R2B -- see die_r2b.)
-    # Reflectometry cell: 4 grating couplers (left alignment loop + 2 open) and the
-    # two 8 mm waveguides, in the band between the two lower modulators.
-    add_reflectometry_cell(cell)
-    # The 2 open couplers -> the two waveguides' west inputs (one bundle, reversed
-    # pairing). Planned against the DC-output chain, whose dc_ec_bot drop passes just
-    # west of the descent. The waveguides' east ends stay as they are -- the bare
-    # facet and the beam dump are the DUT.
-    add_reflectometry_routes(cell, dc_ec_obs)
+    # Reflectometry block (4 grating couplers, two GC-fed 8 mm waveguides --
+    # one open-ended, one beam-dumped -- wired inside the block), centred
+    # vertically in the clear band between the two lower modulators so it
+    # tracks the modulators rather than the die edge. The centring uses the
+    # block's declared depth (couplers to lower waveguide), not its bbox.
+    reflecto = reflectometry_block()
+    lo_bb = cell.instances["gsg_modulator_bot"].bbox
+    hi_bb = cell.instances["gsg_modulator_top"].bbox
+    assert lo_bb is not None and hi_bb is not None  # placed instances have geometry
+    cell.add_placed(
+        reflecto,
+        name="reflectometry",
+        x=(-half_w + kw) + _REFLECTO_LEFT_MARGIN,
+        y=(lo_bb.ymax + hi_bb.ymin) / 2.0 + reflecto.parameters.centring_depth.value / 2.0,
+    )
     # (The SM waveguide-loss cutback test cell moved to R3A -- see die_r3a. The
     # ULL twin recipe, test_waveguide_cutback_ull, is still available if wanted.)
     # Visible names on the RF GSG launch pads (north of each triplet) and on the

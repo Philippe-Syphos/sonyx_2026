@@ -14,7 +14,7 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..dc_routing import add_dc_pad_routes
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
-from ..thermal_crosstalk import add_thermal_crosstalk
+from ..thermal_crosstalk import thermal_crosstalk_block
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
@@ -29,6 +29,12 @@ from .test_cells_die_r1a import place_cutback_top_right, test_waveguide_cutback_
 # right, and the extra head-to-head spacing on this die.
 _INPUT_DC_GAP = 230.0
 _EXTRA_HEAD_SPACING = 100.0
+
+# Die-level anchor of the thermal-crosstalk block (its local origin is the
+# alignment loop's west edge / GC tops line), right of the crossing MZIs:
+# margins off the left / top inner edges (+250 on the left for routing room).
+_THERMAL_LEFT_MARGIN = 2050.0
+_THERMAL_TOP_MARGIN = 40.0
 
 
 def die_r3a() -> fw.Component:
@@ -198,9 +204,16 @@ def die_r3a() -> fw.Component:
     # same slot -- see place_cutback_top_right.
     place_cutback_top_right(cell, test_waveguide_cutback_ull(), "test_waveguide_cutback_ull")
     # (The balanced-bridge crosstalk MZIs moved to R3B -- see die_r3b.)
-    # Thermal-crosstalk cell (heater + stacked balanced-MZI thermometers).
-    # First draft, placement only.
-    add_thermal_crosstalk(cell)
+    # Thermal-crosstalk block (heater + stacked balanced-MZI thermometers +
+    # 9-pad probe row, fully wired), right of the crossing MZIs, top band.
+    half_w = _p.die_width.value / 2.0
+    kw = _p.keepout_width.value
+    cell.add_placed(
+        thermal_crosstalk_block(),
+        name="thermal_crosstalk",
+        x=(-half_w + kw) + _THERMAL_LEFT_MARGIN,
+        y=(half_h - kw) - _THERMAL_TOP_MARGIN,
+    )
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads

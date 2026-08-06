@@ -18,8 +18,15 @@ straight -> output MMI. That single upward jog leaves the output MMI offset ~240
 um above the input. The reference arm then runs east **under** the paperclip at
 the input level and jogs up **east** of it into the output MMI's lower port
 (rising to just below the paperclip arm, so the two never cross). The paperclip
-is thus offset between the two couplers. Placement-only, right of the heater_cr
-block; not routed to fibre I/O or bias pads.
+is thus offset between the two couplers.
+
+The whole test is one self-contained Component
+(:func:`paperclip_mzi_sweep_block`) built in its own local frame -- origin at
+the optical block's top-left anchor, i.e. x = 0 on the alignment loop's west
+edge and y = 0 on the GC/loop tops line (the DC pad row tucks slightly west of
+that, so the bbox west edge is the pads'). The die (``dies/die_r4b.py``) abuts
+that single instance against the heater block with ``add_aligned``; nothing
+here knows die coordinates.
 """
 
 from __future__ import annotations
@@ -38,8 +45,6 @@ from picasso.recipe import recipe
 from picasso.routing import ObstacleSet
 
 from ..parameters import parameters as _p
-from .heater_mzi_sweep import _NUM_DC_PADS as _HEATER_NUM_DC_PADS
-from .heater_mzi_sweep import dc_pad_center_x
 
 # Fold-count sweep: paperclip arm counts (odd, >= 3).
 _NUM_ARMS: tuple[int, ...] = (3, 5, 7)
@@ -58,30 +63,33 @@ _TOP_OUT_STRAIGHT = 140.0
 # Reference up-riser x-position, this far east of the paperclip's east edge (um).
 _REF_RISER_MARGIN = 40.0
 
-# Placement: three MZIs stacked, right of the heater_cr block. Anchor x for the
-# optical block -- the GC array and alignment loop key off it, and the MZIs are
-# centred on the array, so moving this one value slides the optical set
-# east/west without disturbing the centring. The DC pads do NOT key off it:
-# they continue the heater block's 250 um probe grid (dc_pad_center_x).
-_INPUT_X = -800.0
+# Placement: three MZIs stacked, in the block's own local frame. The optical
+# anchor is local x = 0 (the alignment loop's west edge) -- the GC array keys
+# off it and the MZIs are centred on the array.
 _ROW_PITCH = 280.0  # vertical centre-to-centre of stacked MZIs
 
 # Grating-coupler array (north of the block) + left alignment loop, and DC bond
 # pads (below the block). One in + one out coupler per MZI.
 _GC_PER_MZI = 2
-_TOP_MARGIN = 40.0  # coupler/loop tops below the top inner edge
 _GC_TO_BLOCK_GAP = 60.0  # from the GC array bottom down to the top device's top
 _NUM_DC_PADS = 4
+# Centre x of pad 1, block-local. Negative: the 4-pad row tucks slightly west
+# of the optical anchor, preserving the pad<->device geometry the bias-route
+# bundles were tuned against. Pad 1's LEFT edge is the block's west bbox edge,
+# so its centre sits 100 um (half a pad) inside it -- the heater block pins its
+# last pad centre 150 um inside its own east bbox edge, making the two rows one
+# gapless 250 um probe grid under the die's corner-on-corner abutment.
+_PAD_ROW_X0 = -500.0
 # Routing spec for the heater bias / ground metal (see luqia_ln200.tech.routing_specs).
 _DC_SPEC = "routing_top_metal"
 
 # Fibre-I/O bundle knobs, both sides (see add_paperclip_input_routes).
 # Forced first leg (um) along each MZI port's own heading before the pathfinder's
 # first vertex. Required on *both* sides here: every coupler this block targets sits
-# on the far side of the ports it feeds (the couplers span x -526..109 while the
-# inputs are all west of -624 and the outputs all east of +207), so without it the
-# planner tries to reverse on leg 0 and rejects the bundle. Kept small -- these legs
-# are the block's outermost intrusions.
+# on the far side of the ports it feeds (the couplers span local x 274..909 while
+# the inputs are all west of 176 and the outputs all east of 1007), so without it
+# the planner tries to reverse on leg 0 and rejects the bundle. Kept small -- these
+# legs are the block's outermost intrusions.
 _GC_START_STRAIGHT = 40.0
 # Search-window inflation (um) around each bundle's endpoint bbox. The 50 um default
 # leaves no room for that forced leg to turn (the outermost port *is* the bbox edge)
@@ -180,48 +188,56 @@ def _add_gc_array(cell: fw.Component, y_top: float) -> float:
     """Place the GC array + left alignment loop north of the block; return its bottom y.
 
     A constant-pitch row of ``_GC_PER_MZI * _NUM_ARMS`` N-S couplers led by a
-    fibre-alignment loop one pitch to its left, left edge at ``_INPUT_X``, all
+    fibre-alignment loop one pitch to its left, left edge at local x = 0, all
     tops at ``y_top``. Instances ``paperclip_gc_align`` / ``paperclip_gc_array``.
     """
     pitch = _p.grating_coupling_pitch_for_tests.value
     gc_w = gratingcoupler_rib_sm_800nm_ext().bbox.dx
     loop = gratingcoupler_alignment_rib_sm_800nm_ext()
     lb = loop.bbox
-    cell.add_placed(loop, name="paperclip_gc_align", x=_INPUT_X - lb.xmin, y=y_top - lb.ymax)
+    cell.add_placed(loop, name="paperclip_gc_align", x=0.0 - lb.xmin, y=y_top - lb.ymax)
     arr = _gc_line(_GC_PER_MZI * len(_NUM_ARMS))
     ab = arr.bbox
-    array_xmin = (_INPUT_X + lb.dx) + (pitch - gc_w)
+    array_xmin = lb.dx + (pitch - gc_w)
     cell.add_placed(arr, name="paperclip_gc_array", x=array_xmin - ab.xmin, y=y_top - ab.ymax)
     return min(y_top - lb.dy, y_top - ab.dy)
 
 
 def _add_dc_pads(cell: fw.Component) -> None:
-    """Place this block's 4 pads as indices 8..11 of R4B's shared 12-pad row.
+    """Place this block's 4-pad probe row below the MZI stack.
 
-    ``bondpad_for_test_top`` (200 x 200 um, TOP_METAL only) continuing the
-    heater block's 250 um probe grid (:func:`..heater_mzi_sweep.dc_pad_center_x`)
-    so the combined row is gapless for the AEPONYX 9-needle probe card. The
-    row centreline is ``parameters.dc_test_pad_row_y``. Instances
-    ``paperclip_dc_pad_{i}``.
+    ``bondpad_for_test_top`` (200 x 200 um, TOP_METAL only) on the AEPONYX
+    250 um probe grid, pad 1 centred at local ``_PAD_ROW_X0``. The row
+    centreline sits ``parameters.dc_test_pad_drop`` below the block top -- the
+    drop the other test blocks share, so top-aligned blocks land their rows on
+    one horizontal. Instances ``paperclip_dc_pad_{i}``.
     """
     pad = bondpad_for_test_top()
-    y_c = _p.dc_test_pad_row_y.value
+    pad_w = pad.bbox.dy  # rotated 90 deg -> E-W width
+    pitch = pad_w + _p.dc_test_pad_spacing.value
+    y_c = -_p.dc_test_pad_drop.value
     for i in range(_NUM_DC_PADS):
         cell.add_placed(
             pad, name=f"paperclip_dc_pad_{i + 1}",
-            x=dc_pad_center_x(_HEATER_NUM_DC_PADS + i), y=y_c, rotation=90.0,
+            x=_PAD_ROW_X0 + i * pitch, y=y_c, rotation=90.0,
         )
 
 
-def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
-    """Place the paperclip-TOPS test block, right of the heater_cr block.
+@recipe
+def paperclip_mzi_sweep_block() -> fw.Component:
+    """The paperclip-TOPS fold-count sweep as one self-contained block.
 
-    A GC array + left alignment loop (north), the 3 paperclip-TOPS MZIs
+    Local frame: x = 0 on the alignment loop's west edge, y = 0 on the GC/loop
+    tops line; the DC pad row tucks slightly west of x = 0 (``_PAD_ROW_X0``).
+    The die abuts this single Component against the heater block with
+    ``add_aligned``.
+
+    Content: a GC array + left alignment loop (north), the 3 paperclip-TOPS MZIs
     (num_arms 3/5/7) stacked below it, and 4 DC bond pads below those. Each MZI is
     **centred in x on the grating-coupler array** (the alignment loop west of it is
     excluded from that centre), so the three devices -- which differ in width with
     num_arms -- sit symmetrically under their couplers instead of being
-    left-aligned. The couplers and pads stay anchored at ``_INPUT_X``.
+    left-aligned.
 
     Then the wiring: heater bias metal (:func:`add_paperclip_signal_routes` +
     :func:`add_paperclip_ground_routes`) and the fibre I/O, one bundle per side --
@@ -230,10 +246,9 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
     each MZI a nested ``c0<->c5`` / ``c1<->c4`` / ``c2<->c3`` pair. Input before
     output: the output bundle takes the input bundle as an obstacle.
     """
-    half_h = _p.die_height.value / 2.0
-    kw = _p.keepout_width.value
+    cell = fw.Component()
 
-    gc_bottom = _add_gc_array(cell, y_top=(half_h - kw) - _TOP_MARGIN)
+    gc_bottom = _add_gc_array(cell, y_top=0.0)
     # Centre of the coupler array alone -- paperclip_gc_align (the alignment loop)
     # sits to its west and is deliberately not part of this centre.
     arr_bb = cell.instances["paperclip_gc_array"].bbox
@@ -257,7 +272,8 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
             y=y_input - o1[1],
         )
 
-    # DC pads on the same row as the heater_cr block's pads (left cells).
+    # DC pads on the shared row drop (co-linear with the heater block's pads
+    # once the blocks are top-aligned at die assembly).
     _add_dc_pads(cell)
     # Heater wiring, same configuration as the neighbouring heater_cr block.
     add_paperclip_signal_routes(cell)
@@ -265,6 +281,13 @@ def add_paperclip_mzi_sweep(cell: fw.Component) -> None:
     # Fibre I/O: one bundle per side, input first (the output avoids it).
     add_paperclip_input_routes(cell)
     add_paperclip_output_routes(cell)
+    cell.cell_type = "test_structure"
+    cell.description = (
+        "Paperclip-TOPS fold-count sweep test block: 3 offset-coupler MZIs "
+        "(num_arms 3/5/7) with GC fibre I/O and a 4-pad DC probe row, fully "
+        "wired."
+    )
+    return cell
 
 
 def _gc_obstacles(cell: fw.Component, name: str, *, sibling: str | None = None) -> ObstacleSet:
@@ -352,11 +375,12 @@ def add_paperclip_output_routes(cell: fw.Component) -> None:
     per row down, and each ``o2`` also sits ~105 um above its own ``o1`` -- the
     offset-coupler topology lifts the combiner over the paperclip). Same knobs as
     the input side, and the input bundle is added as an obstacle: the two sit in
-    disjoint x ranges (input reaches ~ -262, ``c3`` sits at ~ -145), so listing it
-    makes that separation explicit rather than incidental.
+    disjoint x ranges (input reaches local x ~ 538, ``c3`` sits at ~ 655), so
+    listing it makes that separation explicit rather than incidental.
 
-    The eastward leg reaches x ~ +530, which is clear ground -- the next block east
-    (the unbalanced-MZI ladder) starts past x 3200.
+    The eastward leg reaches local x ~ 1330, near the block's east bbox edge --
+    and since the unbalanced-MZI ladder is abutted to this block's bbox at die
+    assembly, that excursion is part of the footprint the abutment respects.
     """
     n = len(_NUM_ARMS)
     cell.autoroute(

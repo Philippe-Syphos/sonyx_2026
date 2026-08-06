@@ -12,7 +12,7 @@ from luqia_ln200 import pdk
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..dc_routing import add_dc_pad_routes
-from ..gc_test_array import add_open_gc_array
+from ..gc_test_array import open_gc_array_block
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
 from ._frame import die_scaffold, place_thermistance_pad_west_of
 from ._head_coupler_block import (
@@ -33,6 +33,12 @@ from ._head_coupler_block import (
 # top edge. Row-1 specific -- the other dies carry only the bottom pair. Moved
 # 150 um north (1250 -> 1100) to open up the band below it.
 _TOP2_EDGE_INSET = 1100.0
+
+# Die-level anchor of the open GC-array block (its local origin is the loop's
+# west edge / GC tops line), top-right corner: margins off the right / top
+# inner edges (clear of the top-right corner alignment loop).
+_OPEN_GC_RIGHT_MARGIN = 250.0
+_OPEN_GC_TOP_MARGIN = 40.0
 
 
 def die_r1b() -> fw.Component:
@@ -198,13 +204,22 @@ def die_r1b() -> fw.Component:
     # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
     # west-facing U-turn stub). Shared helper.
     add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
-    # Open grating-coupler array (4 couplers) + left alignment loop, top-right --
-    # unrouted fibre I/O for the extra top modulator (gsg_modulator_top_2).
-    add_open_gc_array(cell, num=4, prefix="mod_top2_gc")
+    # Open grating-coupler array block (4 couplers + left alignment loop),
+    # top-right (right edge / GC tops at the standard margins) -- fibre I/O for
+    # the extra top modulator (gsg_modulator_top_2), coupler ports exposed.
+    half_w = _p.die_width.value / 2.0
+    kw = _p.keepout_width.value
+    gc_top2 = open_gc_array_block(4)
+    cell.add_placed(
+        gc_top2,
+        name="mod_top2_gc",
+        x=((half_w - kw) - _OPEN_GC_RIGHT_MARGIN) - gc_top2.bbox.xmax,
+        y=(half_h - kw) - _OPEN_GC_TOP_MARGIN,
+    )
     # R1A/R1B only: park the thermistance bonding pad just west of that array
     # instead of on the reticle-wide _THERMISTANCE_CENTER the other six dies use.
     # Must follow the array -- the pad is re-placed relative to it.
-    place_thermistance_pad_west_of(cell, ("mod_top2_gc_array", "mod_top2_gc_align"))
+    place_thermistance_pad_west_of(cell, ("mod_top2_gc",))
     # modulator_head (left) + output directional coupler (right) for the extra top
     # modulator, rotated 180 deg vs the standard block, in the band above it.
     add_top_head_and_coupler(cell, "gsg_modulator_top_2")

@@ -31,6 +31,17 @@ work progresses (per-die state, open items, first-step check).
   TOP_METAL only (heater terminals are already on `routing_top_metal`).
 - Multi-die shared content = `@recipe` cells stamped via `add_placed` (avoids
   `ComponentNameCollisionError`); or `put()`-chain sub-cells (every abutment a Net).
+- **Test blocks are self-contained `@recipe` Components** built in their own local
+  frame (origin = top-left content anchor: alignment-loop west edge / GC tops line);
+  the die places ONE instance via `add_placed` (at die-level margin constants kept in
+  the die file) and can pack neighbours with `add_aligned(anchor="top_left",
+  to="top_right")` — bbox abutment, route excursions included. Blocks must NOT read
+  die coordinates. Pad rows stay co-linear via `parameters.dc_test_pad_drop` (block
+  top → row centreline, 1443) when blocks are top-aligned; cross-block pad-grid
+  continuity is baked into the cells' own pad offsets relative to their bbox edges
+  (no die-level snap helper). ALL dies are converted (R1A/R1B open-GC arrays +
+  reflectometry, R2A racetrack/cutbacks/gc_doe, R2B termination sweep, R3A thermal
+  crosstalk, R3B crossing-MZI sweep, R4A dc sweeps, R4B heater/paperclip/ladder).
 - Commit only when asked; branch off main first.
 
 ## 3. Per-die state (all placement-only, PLACEHOLDER calibration)
@@ -52,10 +63,18 @@ work progresses (per-die state, open items, first-step check).
   **Back-to-back-coupler MZI sweep** (`dc_mzi_length_sweep.py`): zero-arm MZIs (2 DCs each),
   same two-tier layout, right of the single-DC block. 3 ports routed-intent (o1/o3/o4),
   o2 open.
-- **R4B** — **heater-length thermo-optic MZI sweep** (`heater_mzi_sweep.py`): 6 balanced
-  1x2-MMI MZIs, heater length via ladder `sections` M, two columns + GC arrays + DC pads.
-  **Paperclip-TOPS MZI sweep** (`paperclip_mzi_sweep.py`): 3 offset-coupler MZIs, fold count
-  num_arms=3/5/7, + GC array + DC pads. Plus the unbalanced-MZI n_eff/n_g ladder.
+- **R4B** — three **self-contained, fully wired test blocks** packed west→east by bbox
+  abutment (`heater_mzi_sweep_block` placed at margins 1250/40, then
+  `paperclip_mzi_sweep_block` and `mzi_ladder_block` chained via `add_aligned`
+  top-left-on-top-right): heater-length thermo-optic MZI sweep (6 balanced 1x2-MMI
+  MZIs, ladder `sections` M, 8-pad row) · paperclip-TOPS sweep (3 offset-coupler MZIs,
+  num_arms 3/5/7, 4-pad row) · unbalanced-MZI n_eff/n_g ladder (ord column + ext row).
+  The heater block's pad row is pinned with its last pad centre 150 µm inside the
+  block's east bbox edge (`_PAD_ROW_EAST_SHIFT` = 1059.45, derived from the east
+  ground bundle's excursion at local x 3059.45) and the paperclip's first pad centre
+  sits 100 µm inside its west bbox edge, so plain corner abutment gives ONE gapless
+  12-pad 250-µm probe row (rows co-linear at y = 1092). Re-derive the shift if the
+  heater's east bbox edge moves.
 
 ## 4. Key files
 - **Sonyx blocks**: `gsg_termination_sweep, reflectometry, heater_mzi_sweep,

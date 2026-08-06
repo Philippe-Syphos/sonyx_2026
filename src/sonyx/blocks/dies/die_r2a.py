@@ -11,11 +11,11 @@ from luqia_ln200 import pdk
 
 from ...parameters import DieParameters
 from ...parameters import parameters as _p
-from ..crossing_cutback import add_crossing_cutbacks
+from ..crossing_cutback import crossing_cutback_mmi, crossing_cutback_tapered
 from ..dc_routing import add_dc_pad_routes
-from ..gc_doe import add_gc_doe_block
+from ..gc_doe import gc_doe_block
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
-from ..racetrack_sweep import add_racetrack_gc_routes, add_racetrack_sweep
+from ..racetrack_sweep import racetrack_sweep_block
 from ._frame import die_scaffold
 from ._head_coupler_block import (
     add_dc_output_to_ec_routes,
@@ -25,6 +25,16 @@ from ._head_coupler_block import (
     add_mzm_input_routes,
     add_mzm_output_routes,
 )
+
+# Die-level anchors of the R2A test blocks (each block's local origin is its
+# top-left content anchor; see the block modules).
+_RACETRACK_LEFT_MARGIN = 550.0  # racetrack stack/loop west edge off the left inner edge
+_RACETRACK_TOP_MARGIN = 40.0  # racetrack GC tops below the top inner edge
+# Crossing cutbacks sit right of the racetrack sweep: the left margin clears the
+# widest racetrack (which ends ~2.2 mm right of the left inner edge).
+_CUTBACK_LEFT_MARGIN = 2550.0  # cutback blocks' left edge off the left inner edge
+_CUTBACK_TOP_MARGIN = 140.0  # MMI cutback GC tops below the top inner edge
+_CUTBACK_BLOCK_GAP = 150.0  # vertical gap between the MMI (top) and tapered blocks
 
 
 def die_r2a() -> fw.Component:
@@ -134,23 +144,57 @@ def die_r2a() -> fw.Component:
     # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
     # west-facing U-turn stub). Shared helper.
     add_dc_output_to_ec_routes(cell, int(params.num_edge_couplers_circuit.value), dc_ec_obs)
-    # Variable-length racetrack resonator sweep (5 x L_s, fixed bend point coupler)
-    # for propagation + bend loss extraction, top band.
-    add_racetrack_sweep(cell)
-    # Bus-to-GC fibre I/O routing for the sweep: one tight-SM autoroute per
-    # connection (10 lines), shared obstacle set. See add_racetrack_gc_routes.
-    add_racetrack_gc_routes(cell)
-    # Crossing insertion-loss cutbacks (MMI top, tapered bottom), right of the
-    # racetracks. 3 cascade lengths each, nominal PDK crossings. Chain west ends
-    # are bundle-routed to the 3 westmost GCs inside each block; east ends open.
-    add_crossing_cutbacks(cell)
-    # Grating-coupler DOE (GC_TFLN_795nm v6, 62 loopback variants) in the free
-    # ~565 um band between the two modulator electrodes. The band edges come
-    # from the electrode placement maths above, so the stack tracks any change
-    # to gsg_modulator_vertical_shift / _spacing. Centred in x: the band is
-    # clear from the westmost output-DC routing (x ~ -4372) to the input via
-    # (x ~ 4477), and the 7.79 mm stack sits well inside that.
-    add_gc_doe_block(cell, band_bottom=bot_y + mb.ymax, band_top=top_y + mb.ymin)
+    # --- test blocks (top band + inter-modulator band) ---
+    half_w = _p.die_width.value / 2.0
+    kw = _p.keepout_width.value
+    # Variable-length racetrack resonator sweep (5 x L_s, fixed bend point
+    # coupler) for propagation + bend loss extraction, top band. Its fibre
+    # routing lives inside the block (currently disabled).
+    cell.add_placed(
+        racetrack_sweep_block(),
+        name="racetrack_sweep",
+        x=(-half_w + kw) + _RACETRACK_LEFT_MARGIN,
+        y=(half_h - kw) - _RACETRACK_TOP_MARGIN,
+    )
+    # Crossing insertion-loss cutbacks (MMI top, tapered abutted below it),
+    # right of the racetracks. 3 cascade lengths each, nominal PDK crossings;
+    # each block carries its own fibre routing.
+    mmi_cutback = crossing_cutback_mmi()
+    mmi_bb = mmi_cutback.bbox
+    cutback_mmi = cell.add_placed(
+        mmi_cutback,
+        name="cutback_mmi",
+        x=((-half_w + kw) + _CUTBACK_LEFT_MARGIN) - mmi_bb.xmin,
+        y=((half_h - kw) - _CUTBACK_TOP_MARGIN) - mmi_bb.ymax,
+    )
+    cell.add_aligned(
+        crossing_cutback_tapered(),
+        cutback_mmi,
+        anchor="top_left",
+        to="bottom_left",
+        dy=-_CUTBACK_BLOCK_GAP,
+        name="cutback_tapered",
+    )
+    # Grating-coupler DOE (GC_TFLN_795nm v6, 62 loopback variants) centred in
+    # the free ~565 um band between the two modulator electrodes. The band
+    # edges come from the electrode placement maths above, so the stack tracks
+    # any change to gsg_modulator_vertical_shift / _spacing. Centred in x: the
+    # band is clear from the westmost output-DC routing (x ~ -4372) to the
+    # input via (x ~ 4477), and the 7.79 mm stack sits well inside that.
+    band_bottom, band_top = bot_y + mb.ymax, top_y + mb.ymin
+    doe = gc_doe_block()
+    doe_bb = doe.bbox
+    if doe_bb.dy > band_top - band_bottom:
+        raise ValueError(
+            f"GC DOE block ({doe_bb.dy:.1f} um) exceeds the free band "
+            f"({band_top - band_bottom:.1f} um)"
+        )
+    cell.add_placed(
+        doe,
+        name="gc_doe",
+        x=0.0 - doe_bb.center_x,
+        y=(band_bottom + band_top) / 2.0 - doe_bb.center_y,
+    )
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads

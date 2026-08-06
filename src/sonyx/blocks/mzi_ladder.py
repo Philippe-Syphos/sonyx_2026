@@ -25,8 +25,12 @@ on a common horizontal line north of both groups.
 Both groups are fully wired to their arrays, one bundle per side -- four in all,
 each rung getting a nested coupler pair (``c0<->c5`` / ``c1<->c4`` / ``c2<->c3``
 on the ord column; ``A: c0<->c5``, ``B: c1<->c4``, ``C: c2<->c3`` on the ext row).
-Like :func:`sonyx.blocks.pcm.add_pcm_block`, this module stamps cached ``@recipe``
-cells straight into the die (no wrapper Component to collide at reticle assembly).
+
+The whole ladder is one self-contained Component (:func:`mzi_ladder_block`)
+built in its own local frame -- origin at the ord column's centre x and the
+GC-line centre y. The die (``dies/die_r4b.py``) abuts that single instance
+against the paperclip block with ``add_aligned``; nothing here knows die
+coordinates.
 """
 
 from __future__ import annotations
@@ -66,13 +70,7 @@ _EXT_ROW_GAP = 60.0
 # ~880 um shallower than the stack it replaces, and the ord column still sets the
 # block's bottom edge.
 _EXT_ROW_GC_GAP = 400.0
-# Gap from the die right inner edge to the block right edge. 1250 rather than the
-# original 250: at 250 the ext column and its GC array ran east to x ~5088 and the
-# ladder's lower rungs straddled the thermistance bonding pad (x 4700..5200,
-# y 1050..1550). This slides the whole block 1000 um west of that pad.
-_BLOCK_RIGHT_MARGIN = 1250.0
-# y-anchors relative to the die top inner edge (half_h - keepout):
-_GC_LINE_DROP = 80.0  # GC-array line centre below the top inner edge
+# y-anchor within the block (local y = 0 is the GC-line centre):
 _GC_TO_STACK = 350.0  # top (A) MZI centre below the GC line
 
 # Forced first leg (um) along each MZI port's own heading, before the pathfinder's
@@ -212,18 +210,19 @@ def add_mzi_ext_input_routes(cell: fw.Component) -> None:
     couplers and must peel off first, i.e. onto the eastmost coupler. The
     order-preserving pairing crosses all three lanes.
 
-    Room for the loop (measured, not assumed): ~1250 um of clear die east of the
-    row's east edge (x 4087.5, the block's own right margin) and ~940 um south of
-    the ``o1`` line before ``gsg_modulator_top``. The west-bound leg threads the
-    band **above** the row: ``mzi_ext_out`` gathers along the row top (y 2102-2200,
-    x 2986-3936) and then climbs the band's **west** edge (x 2986-3046), leaving
-    y 2200-2450 clear from x ~3046 east -- and only x <= 3401 is occupied at
-    y 2450-2500, so the ``c3``..``c5`` approaches (x 3517.6+) are untouched. Hence
-    ``o2X = 0``: the two ext bundles share the band without crossing.
+    Room for the loop: the excursion stays within the block's own footprint
+    (~450 um east of the row's east edge, local x ~1997, and ~140 um south of
+    the ``o1`` line), so the die-level bbox abutment accounts for it. The
+    west-bound leg threads the band **above** the row: ``mzi_ext_out`` gathers
+    along the row top (local y -393..-295, x 896..1846) and then climbs the
+    band's **west** edge (x 896..956), leaving y -295..-45 clear from x ~956
+    east -- and only x <= 1311 is occupied at y -45..+5, so the ``c3``..``c5``
+    approaches (x 1427+) are untouched. Hence ``o2X = 0``: the two ext bundles
+    share the band without crossing.
 
     ``bbox_margin`` is the knob this needs. The endpoint bbox is just
-    ``o1``-line-to-coupler-line (x 2995.8..3771.6), but the loop has to leave it
-    on three sides -- ~450 um east to clear the row and ~140 um south. 800 um
+    ``o1``-line-to-coupler-line (local x 905..1681), but the loop has to leave
+    it on three sides -- ~450 um east to clear the row and ~140 um south. 800 um
     opens the window with margin; 1200 gives byte-identical geometry, so this is
     headroom, not tuning.
 
@@ -349,12 +348,11 @@ def add_mzi_ord_output_routes(cell: fw.Component) -> None:
     lanes to cross.
 
     The input bundle is added as an obstacle: the two sit in disjoint x ranges
-    (input reaches ~2755, ``c3`` sits at ~2871), so listing it makes that separation
-    explicit rather than incidental. Watch the **east** end: the forced eastward leg
-    reaches x ~3240, which is past this column's own coupler array (ends ~3146) and
-    inside the ext group's alignment loop x span (~3158..3326). The loop is in the
-    obstacle set so the lane passes beneath it, but that intrusion is worth keeping
-    in mind when the ext column gets routed.
+    (input reaches local x ~665, ``c3`` sits at ~781), so listing it makes that
+    separation explicit rather than incidental. Watch the **east** end: the forced
+    eastward leg runs past this column's own coupler array toward the ext group's
+    alignment loop. The loop is in the obstacle set so the lane passes beneath it,
+    but that intrusion is worth keeping in mind around the ext column's routing.
     """
     labels = [label for label, _ in _LADDER]
     n = len(labels)
@@ -370,11 +368,16 @@ def add_mzi_ord_output_routes(cell: fw.Component) -> None:
     )
 
 
-def add_mzi_ladder(cell: fw.Component) -> None:
-    """Place the 6-MZI ladder: the ord column then the ext row, side by side, top-right.
+@recipe
+def mzi_ladder_block() -> fw.Component:
+    """The 6-MZI ladder as one self-contained block: ord column then ext row.
 
-    Positions the cells in the clear top band of the die, then wires each group to
-    its own coupler half in two bundles.
+    Local frame: x = 0 on the ord column's centre, y = 0 on the GC-line centre;
+    the ext group extends east, the rungs south. The die abuts this single
+    Component against the paperclip block with ``add_aligned``.
+
+    Positions the cells, then wires each group to its own coupler half in two
+    bundles.
 
     The **ord** (west, E-W) column: inputs onto its three westmost couplers
     (:func:`add_mzi_ord_input_routes`) and outputs onto its three eastmost
@@ -396,19 +399,14 @@ def add_mzi_ladder(cell: fw.Component) -> None:
     west->east (A/B/C) at ``_EXT_ROW_GAP``, on one line, with their ``o2`` (north)
     ports ``_EXT_ROW_GC_GAP`` below the coupler port line -- see ``_EXT_ROW_GAP``
     for why a row and not a stack. The two groups sit ``_COL_GAP`` apart
-    (bbox-to-bbox), and the whole block is pushed to the **right** of the die
-    (``_BLOCK_RIGHT_MARGIN`` from the right inner edge), so widening the ext group
-    slides the ord column west rather than moving the block's right edge.
+    (bbox-to-bbox).
 
     Both constant-pitch grating-coupler arrays sit on **one** common line north of
     both groups. Each is centred over its own group -- the ext array (675 um) is
     narrower than the ext row it sits over -- with a fibre-alignment loop one pitch
     to its left (``mzi_gc_align_ord`` / ``_ext``).
     """
-    half_h = _p.die_height.value / 2.0
-    half_w = _p.die_width.value / 2.0
-    top_inner = half_h - _p.keepout_width.value
-    right_inner = half_w - _p.keepout_width.value
+    cell = fw.Component()
 
     ord_cells = [(lbl, pdk.cells["unbalanced_mzi_rib_sm_800nm_ord"](length_imbalance=dl))
                  for lbl, dl in _LADDER]
@@ -416,7 +414,7 @@ def add_mzi_ladder(cell: fw.Component) -> None:
                  for lbl, dl in _LADDER]
     ab = _gc_test_line(2 * len(_LADDER)).bbox
 
-    # --- horizontal layout, relative to the ord column centre x_ord ---
+    # --- horizontal layout, relative to the ord column centre x_ord = 0 ---
     # Ext rungs run west->east in one row at a fixed _EXT_ROW_GAP bbox-to-bbox gap.
     # Offsets are relative to the row's first port anchor (each ext cell carries o1
     # at local (0, 0), o2 directly above it, and its ΔL extends *west*, so xmin
@@ -428,15 +426,13 @@ def add_mzi_ladder(cell: fw.Component) -> None:
     ext_left_rel = min(o + m.bbox.xmin for o, (_, m) in zip(ext_off, ext_cells, strict=True))
     ext_right_rel = max(o + m.bbox.xmax for o, (_, m) in zip(ext_off, ext_cells, strict=True))
     dx_col = ord_hw + _COL_GAP - ext_left_rel  # x_ext - x_ord (_COL_GAP bbox gap)
-    ext_center_rel = dx_col + (ext_left_rel + ext_right_rel) / 2.0  # ext bbox centre - x_ord
-    # Block right edge (rel to x_ord) = max of the ext row and ext GC array.
-    block_right_rel = max(dx_col + ext_right_rel, ext_center_rel + ab.dx / 2.0)
-    x_ord = (right_inner - _BLOCK_RIGHT_MARGIN) - block_right_rel
+    x_ord = 0.0
     x_ext = x_ord + dx_col
-    ext_center_x = x_ord + ext_center_rel
+    ext_center_x = x_ord + dx_col + (ext_left_rel + ext_right_rel) / 2.0
 
-    # --- vertical layout: one GC line, the ord column and the ext row below ---
-    y_gc = top_inner - _GC_LINE_DROP
+    # --- vertical layout: one GC line (centre = local y 0), the ord column and
+    # the ext row below ---
+    y_gc = 0.0
     y_gc_ports = y_gc - ab.dy / 2.0  # coupler port line (array bottom edge)
     y_stack_top = y_gc - _GC_TO_STACK  # top (A) rung centre, ord column
 
@@ -469,3 +465,11 @@ def add_mzi_ladder(cell: fw.Component) -> None:
     # bundle's own wire footprint as an obstacle.
     add_mzi_ext_output_routes(cell)
     add_mzi_ext_input_routes(cell)
+
+    cell.cell_type = "test_structure"
+    cell.description = (
+        "Unbalanced-MZI n_eff/n_g calibration ladder test block: the A/B/C dL "
+        "rungs in both waveguide orientations (ord column + ext row), each "
+        "group wired to its own GC array."
+    )
+    return cell
