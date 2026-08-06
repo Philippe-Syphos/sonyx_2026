@@ -3,9 +3,17 @@
 One **loopback pair** per DOE variant: two identical focusing grating couplers
 (``gratingcoupler_rib_sm_800nm_ext``, facets north / waveguide port south) on the
 ``grating_coupling_pitch_for_tests`` 127 um fibre pitch, joined below by a
-``cbend_rib_sm_800nm_127um`` U-turn. Fibre into one grating, out the other, so a
-single transmission measurement gives 2x the per-coupler efficiency of that
-variant. Each pair carries its DOE ID as a drawn label south of the U-turn.
+**Euler bend - straight - Euler bend** U-turn. Fibre into one grating, out the
+other, so a single transmission measurement gives 2x the per-coupler efficiency
+of that variant. Each pair carries its DOE ID as a drawn label south of the
+U-turn.
+
+The two-bend U-turn is what makes the block fit: a single 127 um Euler C-bend
+spans the same port pair but hangs ~123 um below them, because its effective
+radius fixes only the port separation while the clothoid tails stretch the depth
+to roughly twice a circular bend's. Two 90 deg ``lbend_rib_sm_800nm`` turns joined
+by a straight spend the pitch sideways instead, hanging only
+:data:`_LBEND_RISE` = 50 um and keeping the same Euler curvature transitions.
 
 The DOE sweeps, all through the (now parametric) PDK cell:
 
@@ -27,9 +35,10 @@ a short linear width taper (:data:`_WIDTH_TAPER_LENGTH`) between the coupler and
 the U-turn, added **here** rather than in the PDK cell, so the PDK coupler stays
 exactly the DOE device and the taper stays a test-harness concern.
 
-Block geometry: :func:`gc_doe_block` packs the variants into rows of
-:data:`_VARIANTS_PER_ROW` on a 2-pitch (254 um) centre spacing, stacked
-:data:`_ROW_PITCH` apart, sized to land inside a 400 um x 8 mm envelope.
+Block geometry: :func:`gc_doe_block` packs the variants into two rows of
+:data:`_VARIANTS_PER_ROW` on a 2-pitch (254 um) centre spacing,
+:data:`_ROW_PITCH` apart, landing inside one
+:data:`BLOCK_MAX_HEIGHT` x :data:`BLOCK_MAX_WIDTH` (400 um x 8 mm) tile.
 """
 
 from __future__ import annotations
@@ -37,17 +46,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import picasso as fw
-from luqia_ln200.cells.bends import cbend_rib_sm_800nm_127um
+from luqia_ln200.cells.bends import lbend_rib_sm_800nm
 from luqia_ln200.cells.couplers import (
     gc_focusing_cross_section,
     gratingcoupler_rib_sm_800nm_ext,
 )
 from luqia_ln200.cells.labels import label_moat_labels
-from picasso.leaves import make_taper_from_xs
+from picasso.leaves import make_straight, make_taper_from_xs
 from picasso.recipe import recipe
 from picasso.resolve import to_cross_section
 
 from ..parameters import parameters as _p
+
+# Port-to-port offset (um) of lbend_rib_sm_800nm, i.e. how far the 90 deg Euler
+# bend advances in each axis (its ``use_effective_radius`` footprint radius).
+# Also the depth the U-turn hangs below the coupler ports.
+_LBEND_RISE = 50.0
 
 # Length (um) of the linear width taper between a non-SM DOE coupler and the
 # SM U-turn. Short by design (the DOE measures the grating, not the taper);
@@ -59,14 +73,19 @@ _WIDTH_TAPER_LENGTH = 30.0
 _LABEL_HEIGHT = 15.0
 _LABEL_GAP = 8.0
 
-# Variants per block. A loopback pair spans two fibre pitches, so 31 pairs at a
-# 254 um centre spacing reach 7.94 mm wide — inside the 8 mm budget — and the
-# 62 variants split into exactly two blocks. A single row per block is forced by
-# the 400 um height budget: the tallest unit (GC52, a 1.5 um-core variant whose
-# taper adds 30 um) is 246 um, so a second row would need a <= 154 um row pitch
-# and the two rows would overlap.
-_VARIANTS_PER_BLOCK = 31
-NUM_BLOCKS = 2
+# Variants per row and the row-to-row centre pitch (um). A loopback pair spans
+# two fibre pitches, so 31 pairs at a 254 um centre spacing reach 7.79 mm wide,
+# and the 62 variants fill exactly two rows. The bend-straight-bend U-turn keeps
+# the tallest unit (GC52, whose 1.5 um core adds a 30 um taper) to 183 um. At a
+# 190 um row pitch the block stands 381 um — 19 um inside the height budget,
+# still leaving 37 um between row 0's label moat and row 1's grating moats
+# (rule 10.3 wants 10).
+_VARIANTS_PER_ROW = 31
+_ROW_PITCH = 190.0
+
+# The envelope the block is designed to sit in (um). Enforced in gc_doe_block.
+BLOCK_MAX_WIDTH = 8000.0
+BLOCK_MAX_HEIGHT = 400.0
 
 # Nominal SM rib width (um) — a variant at this width needs no taper.
 _SM_WIDTH = 0.5
@@ -240,10 +259,23 @@ def gc_doe_loopback(gid: str) -> fw.Component:
         port_left = cell.put(taper, port_left, port_to="o1", name="taper_left").ports.o2
         port_right = cell.put(taper, port_right, port_to="o1", name="taper_right").ports.o2
 
-    # 127 um U-turn: its two ports are exactly one fibre pitch apart, so it
-    # lands on both arms; connect() asserts the second abutment.
-    uturn = cell.put(cbend_rib_sm_800nm_127um(), port_left, port_to="o1", name="uturn")
-    cell.connect(uturn.ports.o2, port_right)
+    # U-turn as Euler bend - straight - Euler bend, which hangs only
+    # _LBEND_RISE below the coupler ports. (A single 127 um Euler C-bend spans
+    # the same two ports but is ~123 um deep: its effective radius sets the
+    # port separation, while the clothoid tails stretch the depth to roughly
+    # twice a circular bend's. Two 90 deg bends keep the Euler transitions and
+    # spend the pitch sideways instead of downward.)
+    bend = lbend_rib_sm_800nm()
+    run_length = pitch - 2.0 * _LBEND_RISE
+    turn_left = cell.put(bend, port_left, port_to="o1", name="uturn_bend_left")
+    run = cell.put(
+        make_straight(length=run_length, cross_section="rib_sm_800nm"),
+        turn_left.ports.o2,
+        port_to="o1",
+        name="uturn_run",
+    )
+    turn_right = cell.put(bend, run.ports.o2, port_to="o1", name="uturn_bend_right")
+    cell.connect(turn_right.ports.o2, port_right)
 
     # DOE ID drawn south of the U-turn, centred on the pair.
     label = label_moat_labels(text=variant.gid, height=_LABEL_HEIGHT, valign="top")
@@ -263,43 +295,75 @@ def gc_doe_loopback(gid: str) -> fw.Component:
     return cell
 
 
-def block_variants(block: int) -> tuple[GcVariant, ...]:
-    """The :data:`_VARIANTS_PER_BLOCK` variants carried by ``block``."""
-    start = block * _VARIANTS_PER_BLOCK
-    return GC_DOE[start : start + _VARIANTS_PER_BLOCK]
-
-
 @recipe
-def gc_doe_block(block: int) -> fw.Component:
-    """One DOE block — :data:`_VARIANTS_PER_BLOCK` loopback pairs in a row.
+def gc_doe_block() -> fw.Component:
+    """The whole DOE — 62 loopback pairs in two rows, inside one 400 x 8000 um tile.
 
-    Pairs run west to east on a 2-fibre-pitch (254 um) centre spacing, all
-    gratings on one line so a fibre array lands on the whole row. Block 0 is
-    GC01-GC31, block 1 GC32-GC62. Instances are named ``{gid}`` so a
-    measurement script can look a variant's placement straight up.
-
-    Args:
-        block: Block index, ``0`` to ``NUM_BLOCKS - 1``.
+    Pairs run west to east on a 2-fibre-pitch (254 um) centre spacing; row 0
+    (GC01-GC31) sits above row 1 (GC32-GC62) on :data:`_ROW_PITCH`. Every
+    grating in a row is on one line, so a fibre array lands on a whole row at a
+    time. Instances are named ``{gid}`` so a measurement script can look a
+    variant's placement straight up.
 
     Raises:
-        IndexError: If ``block`` is out of range.
+        ValueError: If the assembled block breaks the
+            :data:`BLOCK_MAX_WIDTH` x :data:`BLOCK_MAX_HEIGHT` envelope.
     """
-    if not 0 <= block < NUM_BLOCKS:
-        raise IndexError(f"block {block} out of range (0..{NUM_BLOCKS - 1})")
     pitch = _p.grating_coupling_pitch_for_tests.value
     cell = fw.Component()
-    for col, variant in enumerate(block_variants(block)):
+    for index, variant in enumerate(GC_DOE):
+        row, col = divmod(index, _VARIANTS_PER_ROW)
         cell.add_placed(
             gc_doe_loopback(variant.gid),
             name=variant.gid,
             x=col * 2.0 * pitch,
-            y=0.0,
+            y=-row * _ROW_PITCH,
+        )
+    bbox = cell.bbox
+    if bbox.dx > BLOCK_MAX_WIDTH or bbox.dy > BLOCK_MAX_HEIGHT:
+        raise ValueError(
+            f"GC DOE block is {bbox.dx:.1f} x {bbox.dy:.1f} um, outside the "
+            f"{BLOCK_MAX_WIDTH:.0f} x {BLOCK_MAX_HEIGHT:.0f} um envelope"
         )
     cell.cell_type = "test_structure"
-    variants = block_variants(block)
-    cell.description = (
-        f"Grating-coupler DOE v6 block {block} — "
-        f"{variants[0].gid}-{variants[-1].gid} loopback pairs"
-    )
+    cell.description = "Grating-coupler DOE v6 — 62 loopback variants, 2 rows"
     cell.calibration_status = "PLACEHOLDER"
     return cell
+
+
+def add_gc_doe_block(
+    cell: fw.Component,
+    band_bottom: float,
+    band_top: float,
+    x_center: float = 0.0,
+) -> None:
+    """Place :func:`gc_doe_block` centred in a free horizontal band.
+
+    Sized for the ~565 um band between R2A's two GSG modulators; the caller
+    passes the band edges (rather than reading them off placed instances) so
+    the maths stays on ty-clean ``Component.bbox`` values. The instance is
+    named ``gc_doe``.
+
+    Args:
+        cell: Die cell to stamp into.
+        band_bottom: y of the free band's south edge (um).
+        band_top: y of the free band's north edge (um).
+        x_center: x the block is centred on (um).
+
+    Raises:
+        ValueError: If the block is taller than the band.
+    """
+    block = gc_doe_block()
+    bbox = block.bbox
+    band_height = band_top - band_bottom
+    if bbox.dy > band_height:
+        raise ValueError(
+            f"GC DOE block ({bbox.dy:.1f} um) exceeds the free band "
+            f"({band_height:.1f} um)"
+        )
+    cell.add_placed(
+        block,
+        name="gc_doe",
+        x=x_center - bbox.center_x,
+        y=(band_bottom + band_top) / 2.0 - bbox.center_y,
+    )

@@ -243,12 +243,23 @@ class DieParameters(ParametersBase):
         ),
     )
     num_bondpads = ParameterField(
-        7,
+        8,
         units="",
         description=(
-            "Number of TOP_METAL bond pads in this die's bond-pad array "
-            "(lower-right corner, pitch = luqia bondpad_pitch). "
-            "PLACEHOLDER default; override per die."
+            "Total number of TOP_METAL bond pads in this die's bond-pad array "
+            "(lower-right corner, pitch = luqia bondpad_pitch). Laid out as "
+            "``num_bondpad_cols`` columns of ``num_bondpads / num_bondpad_cols`` "
+            "pads each; must divide evenly by num_bondpad_cols. PLACEHOLDER "
+            "default; override per die."
+        ),
+    )
+    num_bondpad_cols = ParameterField(
+        2,
+        units="",
+        description=(
+            "Number of physical columns in this die's lower-right bond-pad "
+            "array; num_bondpads is split evenly across them (default 2 columns "
+            "of 4). PLACEHOLDER default; override per die."
         ),
     )
     gsg_modulator_cell = ParameterField(

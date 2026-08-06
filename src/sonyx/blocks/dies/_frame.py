@@ -27,6 +27,7 @@ from luqia_ln200.cells.dc import bonding_pad
 from luqia_ln200.cells.fiducials import fiducial_cross_stepped_moat_labels
 from luqia_ln200.cells.labels import label_moat_labels
 from luqia_ln200.cells.waveguides import spiral_rib_sm_800nm
+from luqia_ln200.tech.parameters import parameters as _pdk
 from picasso.component import PortSpec
 from picasso.geometry.ops import rectangle
 
@@ -66,9 +67,9 @@ _THERMISTANCE_GC_GAP = 300.0
 
 # Extra westward shift (um) of the DC bond-pad array, on top of
 # bondpad_horizontal_shift. Widens the strip between the array and the die edge
-# so the shared-ground rail (..dc_routing.add_dc_gnd_rail) has a lane to run the
+# so the DC bias lines landing on the pads' east faces have a lane to run the
 # length of the stack in.
-_BONDPAD_WEST_SHIFT = 50.0
+_BONDPAD_WEST_SHIFT = 150.0
 
 # Gap (um) between the per-die PCM & calibration block's right edge and the
 # thermistance bonding pad it sits next to (docs/pcm_cells.md).
@@ -117,8 +118,8 @@ _FIDUCIAL_MID_PAIR = (2, 3)
 def die_scaffold(
     name: str,
     die_params: DieParameters,
-    bondpad_rotation: float = 90.0,
     num_bondpads: int | None = None,
+    num_bondpad_cols: int | None = None,
 ) -> fw.Component:
     """Build the shared die scaffold and return the **live, mutable** cell.
 
@@ -147,17 +148,20 @@ def die_scaffold(
       (``"fiducial_spiral_south"``) — and one visible ``WG_RIB.drawing`` name per
       facet (instances ``"label_ec_c*"`` / ``"label_ec_ref"``, see
       :mod:`..labels`);
-    - a TOP_METAL bond-pad array (``die_params.num_bondpads`` pads) lower-right
-      (instance ``"bondpads"``).
+    - a TOP_METAL bond-pad array (``die_params.num_bondpads`` pads in
+      ``die_params.num_bondpad_cols`` columns) lower-right (instance
+      ``"bondpads"``).
 
     Args:
         name: Cell name (also the die-ID shown in the corner label).
         die_params: This die's :class:`~sonyx.parameters.DieParameters`.
-        bondpad_rotation: Rotation (deg) of the lower-right bond-pad array —
-            ``90`` (default) stands the row up into a vertical column against the
-            right edge; ``0`` keeps the original horizontal row.
-        num_bondpads: Override for the number of pads in the bond-pad array;
-            ``None`` (default) uses ``die_params.num_bondpads``.
+        num_bondpads: Override for the total number of pads in the bond-pad
+            array; ``None`` (default) uses ``die_params.num_bondpads``.
+        num_bondpad_cols: Override for the number of physical columns in the
+            bond-pad array; ``None`` (default) uses
+            ``die_params.num_bondpad_cols``. Multi-pad columns are staggered so
+            each rightward column steps up half a pad pitch (R1A's single-pad
+            columns — a plain horizontal row — are left un-staggered).
 
     Returns:
         The live die :class:`~picasso.component.Component` for the caller to
@@ -313,36 +317,47 @@ def die_scaffold(
         # the placed ports — one vertical label alongside each coupler body.
         add_circuit_edge_coupler_labels(cell, num)
 
-    # Bond-pad array (TOP_METAL) in the lower-right corner: horizontal row tiled
-    # with make_array. Rightmost pad clears the right keep-out band plus
-    # bondpad_horizontal_shift; the row bottom clears the bottom keep-out plus
-    # bondpad_vertical_shift (so wirebonded pads stay off the die edge).
+    # Bond-pad array (TOP_METAL) in the lower-right corner: num_bondpad_cols
+    # vertical columns, built directly in the placed orientation (one make_array
+    # per column, see ..bondpads.bondpad_array). Rightmost column clears the right
+    # keep-out band plus bondpad_horizontal_shift; the (lowest) column bottom
+    # clears the bottom keep-out plus bondpad_vertical_shift (so wirebonded pads
+    # stay off the die edge).
     num_bp = int(num_bondpads if num_bondpads is not None else die_params.num_bondpads.value)
+    num_cols = int(
+        num_bondpad_cols if num_bondpad_cols is not None else die_params.num_bondpad_cols.value
+    )
     right_x = half_w - _p.keepout_width.value - _p.bondpad_horizontal_shift.value
     bottom_y = -half_h + _p.keepout_width.value + _p.bondpad_vertical_shift.value
     # Thermistance pad's placed left / top edges — the PCM block anchors to them.
     therm_left: float | None = None
     therm_top: float | None = None
     if num_bp > 0:
-        bp = bondpad_array(num_bp)
+        if num_cols < 1 or num_bp % num_cols != 0:
+            raise ValueError(
+                f"num_bondpads ({num_bp}) must be a positive multiple of "
+                f"num_bondpad_cols ({num_cols}) so the pads split evenly into columns"
+            )
+        pads_per_col = num_bp // num_cols
+        # Stagger multi-pad columns up by half a pad pitch each (right column
+        # higher), opening a lane between the columns' west faces for the DC bias
+        # routing. Single-pad columns (R1A's horizontal row) get no stagger -- it
+        # would just splay the row into a diagonal.
+        col_stagger = _pdk.bondpad_pitch.value / 2.0 if pads_per_col > 1 else 0.0
+        bp = bondpad_array(
+            num_cols=num_cols, pads_per_col=pads_per_col, col_stagger=col_stagger
+        )
         bp_bb = bp.bbox
-        # Anchor the array's (post-rotation) bottom-right corner to (right_x,
-        # bottom_y). rotation=90 maps (x, y) -> (-y, x), so the placed right edge
-        # is -ymin and the placed bottom is xmin; rotation=0 keeps the raw bbox.
-        if bondpad_rotation == 90.0:
-            placed_xmax, placed_ymin = -bp_bb.ymin, bp_bb.xmin
-            array_width = bp_bb.dy
-        else:
-            placed_xmax, placed_ymin = bp_bb.xmax, bp_bb.ymin
-            array_width = bp_bb.dx
+        array_width = bp_bb.dx
         # _BONDPAD_WEST_SHIFT moves the array only -- right_x still anchors the
         # thermistance pad and, through it, the PCM block, so those stay put.
+        # Anchor the (lowest, un-staggered) column's bottom-right corner to
+        # (right_x, bottom_y); the staggered columns rise above bottom_y.
         cell.add_placed(
             bp,
             name="bondpads",
-            x=right_x - placed_xmax - _BONDPAD_WEST_SHIFT,
-            y=bottom_y - placed_ymin,
-            rotation=bondpad_rotation,
+            x=right_x - bp_bb.xmax - _BONDPAD_WEST_SHIFT,
+            y=bottom_y - bp_bb.ymin,
         )
         # Thermistance bonding pad in the lower-right region, _THERMISTANCE_GAP
         # left of the bond-pad array and bottom-aligned to it.

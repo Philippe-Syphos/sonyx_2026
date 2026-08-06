@@ -13,6 +13,7 @@ from ...parameters import DieParameters
 from ...parameters import parameters as _p
 from ..crossing_cutback import add_crossing_cutbacks
 from ..dc_routing import add_dc_pad_routes
+from ..gc_doe import add_gc_doe_block
 from ..labels import add_rf_pad_labels, add_thermistance_pad_label
 from ..racetrack_sweep import add_racetrack_gc_routes, add_racetrack_sweep
 from ._frame import die_scaffold
@@ -143,6 +144,13 @@ def die_r2a() -> fw.Component:
     # racetracks. 3 cascade lengths each, nominal PDK crossings. Chain west ends
     # are bundle-routed to the 3 westmost GCs inside each block; east ends open.
     add_crossing_cutbacks(cell)
+    # Grating-coupler DOE (GC_TFLN_795nm v6, 62 loopback variants) in the free
+    # ~565 um band between the two modulator electrodes. The band edges come
+    # from the electrode placement maths above, so the stack tracks any change
+    # to gsg_modulator_vertical_shift / _spacing. Centred in x: the band is
+    # clear from the westmost output-DC routing (x ~ -4372) to the input via
+    # (x ~ 4477), and the 7.79 mm stack sits well inside that.
+    add_gc_doe_block(cell, band_bottom=bot_y + mb.ymax, band_top=top_y + mb.ymin)
     # Wire via cell.instances["gsg_modulator_bot"/"gsg_modulator_top"],
     # "edge_couplers_circuit", "bondpads".
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads

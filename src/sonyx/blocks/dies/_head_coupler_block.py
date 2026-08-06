@@ -494,7 +494,7 @@ def add_mzm_input_routes(
         ("gsg_modulator_bot", "o3"),
         ("gsg_modulator_bot", "o4"),
     ]
-    cell.autoroute(ports_a=src, ports_b=tgt, spec="routing_sm_default", strategy="vgraph_rect", 
+    cell.autoroute(ports_a=src, ports_b=tgt, spec="routing_sm_default", strategy="vgraph_rect",
                    end_straight=1.0, start_straight=1.0
                    )
 

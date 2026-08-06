@@ -38,7 +38,10 @@ _TOP2_EDGE_INSET = 1100.0
 def die_r1a() -> fw.Component:
     """Build and return the R1·A die."""
     params = DieParameters()
-    cell = die_scaffold("die_R1A", params, bondpad_rotation=0.0)
+    # R1A keeps its original horizontal row of 7 bond pads (NOT the shared
+    # 2-columns-of-4 corner block the other dies use): 7 single-pad columns laid
+    # out as one horizontal row (1 pad tall, un-staggered).
+    cell = die_scaffold("die_R1A", params, num_bondpads=7, num_bondpad_cols=7)
     # Two GSG phase-modulator electrodes (SM on column A) stacked vertically:
     # bottom one gsg_modulator_vertical_shift above the die bottom edge, top one
     # gsg_modulator_spacing (centre-to-centre) above it. Placed directly so their
