@@ -102,37 +102,47 @@ def add_dc_pad_routes(cell: fw.Component, second_head: str | None = None) -> Non
             ``"test_modulator_head_2"``); ``None`` for the single-head dies.
     """
     head = "test_modulator_head"
-    # Heads present on this die, sorted bottom-up by their coupler terminal. The
-    # single-head dies are just the length-1 case -- every call below is written
-    # over this list so the two-head behaviour collapses automatically.
+    # Heads present on this die, sorted bottom-up. Keyed on the head's optical
+    # input (``o1``, present on every head), not the coupler terminal -- the
+    # adiabatic second head has no coupler terminal. The single-head dies are
+    # just the length-1 case -- every call below is written over this list so
+    # the two-head behaviour collapses automatically.
     heads = [head] + ([second_head] if second_head is not None else [])
-    heads = sorted(heads, key=lambda h: cell.instances[h].ports["e_coupler_1"].position[1])
+    heads = sorted(heads, key=lambda h: cell.instances[h].ports["o1"].position[1])
+    # Heads that carry a split-ratio coupler heater: the tunable heads do, the
+    # fixed-50/50 adiabatic second head does not, so it is excluded from the two
+    # coupler-bias lanes below (it keeps its phase-shifter lanes further down).
+    coupler_heads = [
+        h for h in heads if "e_coupler_1" in list(cell.instances[h].ports)
+    ]
 
     # Tunable-coupler west (undriven) terminals -> I0 west face, tied together as
-    # a common ground: every head's coupler ground lands on the one pad, so a
-    # single wirebond on I0 grounds them all. One lane on the single-head dies.
-    cell.autoroute(
-        ports_a=[(h, "e_coupler_1") for h in heads],
-        ports_b=[dc_pad_port(cell, "I", 0, "w")] * len(heads),
-        spec=_DC_SPEC,
-        strategy=_DC_STRATEGY,
-        avoid_port_owners=False,
-        name="dc_gnd_coupler1",
-    )
+    # a common ground: every tunable head's coupler ground lands on the one pad,
+    # so a single wirebond on I0 grounds them all. One lane on the single-head
+    # dies; skipped entirely if no head has a coupler heater.
+    if coupler_heads:
+        cell.autoroute(
+            ports_a=[(h, "e_coupler_1") for h in coupler_heads],
+            ports_b=[dc_pad_port(cell, "I", 0, "w")] * len(coupler_heads),
+            spec=_DC_SPEC,
+            strategy=_DC_STRATEGY,
+            avoid_port_owners=False,
+            name="dc_gnd_coupler1",
+        )
 
-    # Tunable-coupler east (driven / signal) terminals -> the inner column from
-    # row 1 up, one independent pad each. Lowest head -> I1, next up -> I2, ... so
-    # the lanes stay parallel. Collapses to a single lane H1 -> I1 on the
-    # single-head dies.
-    cell.autoroute(
-        ports_a=[(h, "e_coupler_2") for h in heads],
-        ports_b=[dc_pad_port(cell, "I", i + 1, "w") for i in range(len(heads))],
-        spec=_DC_SPEC,
-        strategy=_DC_STRATEGY,
-        avoid_port_owners=False,
-        end_straight=500.0,
-        name="dc_bias_coupler2",
-    )
+        # Tunable-coupler east (driven / signal) terminals -> the inner column from
+        # row 1 up, one independent pad each. Lowest head -> I1, next up -> I2, ... so
+        # the lanes stay parallel. Collapses to a single lane H1 -> I1 on the
+        # single-tunable-head dies (the common dies' adiabatic second head adds none).
+        cell.autoroute(
+            ports_a=[(h, "e_coupler_2") for h in coupler_heads],
+            ports_b=[dc_pad_port(cell, "I", i + 1, "w") for i in range(len(coupler_heads))],
+            spec=_DC_SPEC,
+            strategy=_DC_STRATEGY,
+            avoid_port_owners=False,
+            end_straight=500.0,
+            name="dc_bias_coupler2",
+        )
 
     # Both TOPS phase shifters' west "_1" terminals (e_phase_1 + e_phase2_1),
     # every head, all tied onto I3's west face as one common node. 4 lanes on the

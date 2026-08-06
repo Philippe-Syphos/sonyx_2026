@@ -135,13 +135,16 @@ def die_r2b() -> fw.Component:
     # modulator_head + directional-coupler test block, identical to R4A's input
     # setup, fed from the two next-rightmost circuit edge couplers (default,
     # non-tight SM routing).
-    add_head_and_couplers(cell)
-    add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    add_head_and_couplers(cell, second_input_adiabatic=True)
+    add_head_input_routes(
+        cell, int(params.num_edge_couplers_circuit.value),
+        second_device="test_modulator_head_2",
+    )
     # Terminate the input stage's spare (unfed) west inputs -- one per input
     # device -- with a PDK beam dump, mirrored away from the fed neighbour.
     add_input_beam_dumps(cell)
     # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
-    add_mzm_input_routes(cell)
+    add_mzm_input_routes(cell, second_device="test_modulator_head_2")
     # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
     dc_ec_obs = add_mzm_output_routes(cell)
     # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
@@ -169,7 +172,7 @@ def die_r2b() -> fw.Component:
     # "edge_couplers_circuit", "bondpads".
     # DC bias routing on TOP_METAL: modulator-head terminals -> bond pads
     # (pads 0-3 bias, remaining pads strapped as the common ground land).
-    add_dc_pad_routes(cell)
+    add_dc_pad_routes(cell, second_head="test_modulator_head_2")
     # Visible names on the RF GSG launch pads (north of each triplet) and on the
     # thermistance bonding pad (west of it) -- last, so both read the pads' final
     # placed positions.

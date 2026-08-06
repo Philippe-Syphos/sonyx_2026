@@ -44,6 +44,31 @@ _OPEN_GC_TOP_MARGIN = 40.0
 # centred in the band between the two lower modulators -- see the placement).
 _REFLECTO_LEFT_MARGIN = 1000.0
 
+# PCM & calibration cells (the four the scaffold stamps as pcm_*).
+_PCM_INSTANCE_NAMES = ("pcm_open_gsg", "pcm_shorted_gsg", "pcm_ring_stack", "pcm_bondpad_row")
+
+
+def _recentre_pcm_in_clear_band(cell: fw.Component) -> None:
+    """Slide R1A's PCM block east into the clear bottom band.
+
+    The shared scaffold (:func:`._frame.die_scaffold`) anchors the PCM block off
+    the thermistance pad's parked position beside the bond-pad array. On R1A that
+    array is the far-east 7-pad row and the pad is later relocated to the top-right
+    (:func:`place_thermistance_pad_west_of`), so the block lands center-west, on
+    top of the SM delay spiral. Move the four ``pcm_*`` cells east as one group so
+    the block centres in the open band between the spiral's east edge and the die
+    bond-pad row's west edge (the two structures that bound the bottom strip).
+    """
+    # placed instances always have geometry -- the None filter is only for ty.
+    boxes = [b for n in _PCM_INSTANCE_NAMES if (b := cell.instances[n].bbox) is not None]
+    spiral_bb = cell.instances["test_spiral_sm"].bbox
+    bondpads_bb = cell.instances["bondpads"].bbox
+    assert spiral_bb is not None and bondpads_bb is not None
+    pcm_cx = (min(b.xmin for b in boxes) + max(b.xmax for b in boxes)) / 2.0
+    delta_x = (spiral_bb.xmax + bondpads_bb.xmin) / 2.0 - pcm_cx
+    for name in _PCM_INSTANCE_NAMES:
+        cell.instances[name].move(delta_x, 0.0)
+
 
 def die_r1a() -> fw.Component:
     """Build and return the R1·A die."""
@@ -106,16 +131,25 @@ def die_r1a() -> fw.Component:
     launch = pdk.cells["gsg_launch_electrode_to_pads_top_metal_50ohms"]()
     launch_east_from_e1 = launch.bbox.xmax - launch.ports["e1"].position[0]
     pad_east_x = mod_bot.ports.e2.position[0] + launch_east_from_e1
-    add_head_and_couplers(cell, input_anchor=(pad_east_x, mod_bot.ports.e1.position[1]))
-    # Feed the input block's head + directional coupler from the two next-rightmost
-    # circuit edge couplers (default, non-tight SM routing).
-    add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    add_head_and_couplers(
+        cell,
+        second_input_adiabatic=True,
+        input_anchor=(pad_east_x, mod_bot.ports.e1.position[1]),
+    )
+    # Feed the input block's two heads (tunable + adiabatic) from the two
+    # next-rightmost circuit edge couplers (default, non-tight SM routing).
+    add_head_input_routes(
+        cell, int(params.num_edge_couplers_circuit.value),
+        second_device="test_modulator_head_2",
+    )
     # Terminate the input stage's spare (unfed) west inputs -- one per input
     # device -- with a PDK beam dump, mirrored away from the fed neighbour.
     add_input_beam_dumps(cell)
-    # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom).
-    # The third modulator (gsg_modulator_top_2) has its own head and is not fed here.
-    add_mzm_input_routes(cell)
+    # Route the input-block outputs to the two MZMs (tunable head -> top,
+    # adiabatic head -> bottom). The third modulator (gsg_modulator_top_2) has
+    # its own head and is not fed here. (R1A does not wire the main heads' DC
+    # bias to the pad array -- placement-only, as for its tunable head.)
+    add_mzm_input_routes(cell, second_device="test_modulator_head_2")
     # Route each MZM's outputs (o1/o2) into its output directional coupler (two calls).
     dc_ec_obs = add_mzm_output_routes(cell)
     # Output DCs -> open circuit edge couplers (bottom drop + top drop via a
@@ -165,6 +199,10 @@ def die_r1a() -> fw.Component:
         x=(-half_w + kw) + _REFLECTO_LEFT_MARGIN,
         y=(lo_bb.ymax + hi_bb.ymin) / 2.0 + reflecto.parameters.centring_depth.value / 2.0,
     )
+    # The scaffold parked the PCM block on the SM delay spiral (its anchor -- the
+    # thermistance pad -- was relocated to the top-right on this die), so slide it
+    # east into the clear bottom band between the spiral and the bond-pad row.
+    _recentre_pcm_in_clear_band(cell)
     # (The SM waveguide-loss cutback test cell moved to R3A -- see die_r3a. The
     # ULL twin recipe, test_waveguide_cutback_ull, is still available if wanted.)
     # Visible names on the RF GSG launch pads (north of each triplet) and on the

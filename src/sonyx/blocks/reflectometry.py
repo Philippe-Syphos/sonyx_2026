@@ -146,10 +146,9 @@ def add_reflectometry_routes(cell: fw.Component) -> None:
     two separate calls plan independently and cross in it.
 
     **Pairing is reversed** (west coupler ``c0`` -> the *lower* waveguide, east
-    coupler ``c1`` -> the *upper* one), the same rule as
-    :func:`..dc_length_sweep.add_group_input_routes` and for the same reason: in the
-    descending corridor the lanes are ordered in x, and peeling east the lane that
-    turns first (the upper target) has to be the inner-most, i.e. the east-most.
+    coupler ``c1`` -> the *upper* one): in the descending corridor the lanes are
+    ordered in x, and peeling east the lane that turns first (the upper target) has
+    to be the inner-most, i.e. the east-most.
     The natural ``c0`` -> upper order would drive ``c1``'s descent straight through
     ``c0``'s eastward run at y = 31.2.
 

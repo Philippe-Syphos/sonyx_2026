@@ -679,6 +679,7 @@ def add_dc_output_to_ec_routes(
 def add_head_and_couplers(
     cell: fw.Component,
     second_input_head: bool = False,
+    second_input_adiabatic: bool = False,
     extra_input_spacing: float = 0.0,
     input_anchor: tuple[float, float] | None = None,
 ) -> None:
@@ -691,18 +692,24 @@ def add_head_and_couplers(
     launch (R1A, which has no ``rf_pads_bot_in``) pass the launch east edge in.
     Adds:
 
-    - ``test_modulator_head`` (dual-bias) with, right below it, either a
-      ``test_directional_coupler`` (default) or a second dual-bias
-      ``test_modulator_head_2`` when ``second_input_head=True`` (e.g. R3A) --
-      under the input pads near the bond-pad array;
+    - ``test_modulator_head`` (dual-bias) with, right below it, one of: a
+      ``test_directional_coupler`` (default); a second dual-bias tunable
+      ``test_modulator_head_2`` when ``second_input_head=True`` (R3A/R3B); or an
+      **adiabatic** ``test_modulator_head_2`` when ``second_input_adiabatic=True``
+      (the common dies) -- under the input pads near the bond-pad array;
     - ``test_dc_out_bot`` / ``test_dc_out_top`` -- one directional coupler above
       each modulator, by its output pad.
 
     Args:
         cell: die cell carrying the modulators (and, unless ``input_anchor`` is
             given, the ``rf_pads_bot_in`` launch pads), extended in place.
-        second_input_head: place a second modulator_head below the first
-            (instead of a directional coupler) at the input.
+        second_input_head: place a second (tunable) modulator_head below the
+            first (instead of a directional coupler) at the input.
+        second_input_adiabatic: place a second *adiabatic* modulator_head below
+            the first (the fixed-50/50 head, one fewer heater than the tunable
+            one -- no split-ratio coupler terminals). Same instance name / ports
+            as the tunable second head, so every downstream routing helper wires
+            it the same way. Takes precedence over ``second_input_head``.
         extra_input_spacing: extra vertical gap (um) added below the first head
             before the second head / DC, on top of the default spacing.
         input_anchor: ``(x, y)`` of the input pad's outer (east) edge to anchor
@@ -719,7 +726,16 @@ def add_head_and_couplers(
     hb = head.bbox
     head_y = (anchor_y - _HEAD_SHIFT_Y) - hb.ymax
     cell.add_placed(head, name="test_modulator_head", x=right - hb.xmax, y=head_y)
-    if second_input_head:
+    if second_input_adiabatic:
+        # Adiabatic modulator head: the tunable second head with its DC split-
+        # ratio coupler swapped for the fixed 50/50 adiabatic 2x2 (one fewer
+        # heater -- no e_coupler_* terminals). Named/ported like the tunable
+        # second head so add_head_input_routes / add_mzm_input_routes /
+        # add_dc_pad_routes treat it identically (the pad-routing helper skips
+        # its absent coupler terminals).
+        below = pdk.cells["modulator_head_adiabatic_rib_sm_800nm_ord"](second_bias_tops=True)
+        below_name = "test_modulator_head_2"
+    elif second_input_head:
         below = pdk.cells["modulator_head_rib_sm_800nm_ord"](second_bias_tops=True)
         below_name = "test_modulator_head_2"
     else:

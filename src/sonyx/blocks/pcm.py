@@ -11,15 +11,15 @@ Cells (left to right):
 1. ``open GSG``   -- open GSG landing pads (RF de-embed, parasitic C).
 2. ``short GSG``  -- GSG pads shorted signal->ground by the low-R
                      ``gsg_short_top_metal_50ohms`` bar.
-3. ``MRR g800``   -- all-pass ring (800 nm coupler gap), GC-column I/O, rot 90.
-4. ``MRR g400``   -- all-pass ring (400 nm coupler gap), GC-column I/O, rot 90.
+3. ``MRR g800``   -- all-pass ring (800 nm coupler gap), GC-row I/O.
+4. ``MRR g400``   -- all-pass ring (400 nm coupler gap), GC-row I/O.
 5. ``bondpad row`` -- 9-pad AEPONYX probe row with the heater_cr DUT wired to
                      the third and fourth pads (0-based pads 2-3).
 
 The grating loopback has been removed pending a rebuild. The rings follow the
-buddha ring-test pattern (2-up 127 um GC column, ring on a folded bus) built
-from the ``ringresonator_allpass_rib_sm_800nm`` PDK cell, and the whole element
-is rotated 90 deg.
+buddha ring-test pattern (2-up 127 um GC row, ring on a folded bus) built from
+the ``ringresonator_allpass_rib_sm_800nm`` PDK cell on the N-S ``_ext``
+grating couplers in their native orientation.
 """
 
 from __future__ import annotations
@@ -75,20 +75,21 @@ def _shorted_gsg() -> fw.Component:
 
 
 def _ring_element(gap: float) -> fw.Component:
-    """All-pass ring on a 2-up GC column, folded bus (buddha pattern), rotated 90.
+    """All-pass ring on a 2-up GC row, folded bus (buddha pattern).
 
-    GC(out) at the bottom of a 127 um GC column, GC(in) at the top; the top GC
-    feeds a short lead straight -> tight L-bend onto the ring's bus -> ring (PDK
-    ``ringresonator_allpass_rib_sm_800nm``, circle hung to one side) -> tight
-    L-bend -> bridge straight -> back into the bottom GC. Probed by the standard
-    grating-coupler fibre alignment. The assembled element is rotated 90 deg.
+    GC(out) at the east end of a 127 um GC row, GC(in) at the west end — both
+    the N-S ``gratingcoupler_rib_sm_800nm_ext`` (facet north, port south) in
+    their native orientation. The west GC feeds a tight L-bend onto the ring's
+    bus -> ring (PDK ``ringresonator_allpass_rib_sm_800nm``, circle hung to one
+    side) -> tight L-bend -> back into the east GC. Probed by the standard
+    grating-coupler fibre alignment.
     """
     inner = fw.Component()
     gc_out = inner.add_placed(
-        pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), name="gc_out", x=0.0, y=0.0
+        pdk.cells["gratingcoupler_rib_sm_800nm_ext"](), name="gc_out", x=0.0, y=0.0
     )
     gc_in = inner.add_placed(
-        pdk.cells["gratingcoupler_rib_sm_800nm_ord"](), name="gc_in", x=0.0, y=_FIBER_PITCH
+        pdk.cells["gratingcoupler_rib_sm_800nm_ext"](), name="gc_in", x=-_FIBER_PITCH, y=0.0
     )
     fold = pdk.cells["lbend_rib_sm_800nm_tight"]().ports["o2"].position[0]
     bus_len = _FIBER_PITCH - 2.0 * fold
@@ -105,12 +106,9 @@ def _ring_element(gap: float) -> fw.Component:
         pdk.cells["lbend_rib_sm_800nm_tight"](), ring.ports.o2, port_to="o1", name="bend_out"
     )
     # No lead-in / bridge straights: the two folds return the path exactly to the
-    # bottom GC, so bend_out mates gc_out directly.
+    # east GC, so bend_out mates gc_out directly.
     inner.connect(bend_out.ports.o2, gc_out.ports.o1)
-    # Rotate the whole ring element 90 deg.
-    c = fw.Component()
-    c.add_placed(inner, name="ring_elem", rotation=90.0)
-    return c
+    return inner
 
 
 @recipe(register_as="pcm_ring_g800")

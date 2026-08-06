@@ -10,9 +10,9 @@ crosstalk decay delta-T(distance).
 Layout (top-down): GC array + alignment loop (MZI fibre I/O), the heater line,
 then ``_NUM_MZI`` balanced MZIs stacked downward. A full 9-pad TOP_METAL probe
 row (``bondpad_for_test_top``, same as the R4B TOPS test) sits on the shared DC
-test-pad row -- the AEPONYX automated-probe provision (9 pads at the 250 um
-pitch, every needle landing on metal, first pad always used) -- with only the
-two westmost pads wired to the heater bias.
+test-pad row, centred on the grating-coupler array (9 pads at the 250 um pitch,
+every needle landing on metal) -- with only the two central pads (5-6) wired to
+the heater bias.
 """
 
 from __future__ import annotations
@@ -41,8 +41,8 @@ _GC_ROW_GAP = 250.0  # gap from the GC array to the heater
 
 # Probe pads on the shared DC test-pad row: the AEPONYX automated-probe card
 # expects a provision for 9 pads (250 um pitch) with every needle landing on
-# metal and the first (westmost) pad always used -- so the heater bias takes
-# pads 1-2 and pads 3-9 are unwired landing metal.
+# metal. The row is centred on the grating-coupler array and the heater bias
+# takes the two central pads (5-6); the rest are unwired landing metal.
 _NUM_DC_PADS = 9
 
 
@@ -90,8 +90,9 @@ def thermal_crosstalk_block() -> fw.Component:
     Top-down: GC array + alignment loop, the heater line (centred over the MZI
     arm region), then ``_NUM_MZI`` balanced MZIs stacked downward at increasing
     distance from the heater. A ``_NUM_DC_PADS``-pad probe row sits on the shared
-    DC row drop (the AEPONYX 9-pad provision); the heater bias wires to pads 1-2
-    and the rest are unwired landing metal. Instances ``thermal_gc_align`` /
+    DC row drop (the AEPONYX 9-pad provision), centred on the GC array; the heater
+    bias wires to the two central pads (5-6) and the rest are unwired landing
+    metal. Instances ``thermal_gc_align`` /
     ``thermal_gc_array`` / ``thermal_heater`` / ``thermal_mzi_{i}`` /
     ``thermal_dc_pad_{1..9}``.
     """
@@ -143,14 +144,18 @@ def thermal_crosstalk_block() -> fw.Component:
     )
 
     # The 9-pad probe row on the shared DC test-pad row (as on R4B TOPS). The
-    # two **wired** pads (1-2) stay centred on the heater above them (which is
-    # itself centred on the GC array / MZI stack), so the two bias routes drop
-    # symmetrically; the unwired provision pads (3-9) continue the 250 um pitch
-    # eastward.
+    # whole row is **centred on the grating-coupler array** (its middle pad,
+    # pad 5, lands on heater_cx, which is itself the GC-array / MZI-stack
+    # centre), so the row reads as symmetric under the couplers. The heater
+    # bias wires to the two **central** pads (5-6) rather than the westmost
+    # pair, so the two drops fall in the middle of the row; the remaining pads
+    # are unwired landing metal continuing the 250 um pitch each way.
     pad = bondpad_for_test_top()
     pad_w_rot = pad.bbox.dy
     pad_pitch = pad_w_rot + _p.dc_test_pad_spacing.value
-    x_pad0 = heater_cx - pad_pitch / 2.0  # centre of pad 1 (westmost, always used)
+    # Centre of pad 1 (westmost): shifted so pad (_NUM_DC_PADS+1)//2 = pad 5
+    # sits on heater_cx and the row is centred on the couplers.
+    x_pad0 = heater_cx - (_NUM_DC_PADS - 1) / 2.0 * pad_pitch
     for i in range(_NUM_DC_PADS):
         cell.add_placed(
             pad,
@@ -203,10 +208,12 @@ def thermal_crosstalk_block() -> fw.Component:
     # Heater bias: each heater terminal up to its own bond pad. Two separate
     # autoroute calls, not one bundle -- the heater's terminals face opposite ways
     # (e1 west, e2 east) and a bundle needs every lane to share an outward
-    # heading. e1 takes the lower-x pad, e2 the higher-x one, so the two lines
-    # don't cross. Landing on the pads' north faces (the pads are rotated 90 deg,
-    # so that face is the port named "e").
-    for term, pad_idx in (("e1", 1), ("e2", 2)):
+    # heading. e1 takes the lower-x (central) pad, e2 the higher-x one, so the two
+    # lines don't cross. The two wired pads are the central pair (pad 5 on the
+    # heater centreline, pad 6 just east of it). Landing on the pads' north faces
+    # (the pads are rotated 90 deg, so that face is the port named "e").
+    mid_pad = _NUM_DC_PADS // 2 + 1  # 5 for 9 pads (the centre pad, on heater_cx)
+    for term, pad_idx in (("e1", mid_pad), ("e2", mid_pad + 1)):
         cell.autoroute(
             ports_a=[("thermal_heater", term)],
             ports_b=[(f"thermal_dc_pad_{pad_idx}", "e")],

@@ -134,16 +134,19 @@ def die_r4a() -> fw.Component:
     )
     # --- R4·A per-die content ---
     # modulator_head + directional couplers test block (shared with R4B).
-    add_head_and_couplers(cell)
+    add_head_and_couplers(cell, second_input_adiabatic=True)
     # Feed the input block's head + directional coupler from the two next-rightmost
     # circuit edge couplers (default, non-tight SM routing).
-    add_head_input_routes(cell, int(params.num_edge_couplers_circuit.value))
+    add_head_input_routes(
+        cell, int(params.num_edge_couplers_circuit.value),
+        second_device="test_modulator_head_2",
+    )
     # Terminate the input stage's spare (unfed) west inputs -- one per input
     # device -- with a PDK beam dump, mirrored away from the fed neighbour.
     add_input_beam_dumps(cell)
     # Route the input-block outputs to the two MZMs (head -> top, coupler -> bottom),
     # a single 4-lane bundle to the modulators' east ports.
-    add_mzm_input_routes(cell)
+    add_mzm_input_routes(cell, second_device="test_modulator_head_2")
     # Route each MZM's outputs into its output directional coupler. This also builds
     # the DC-output chain's shared obstacle set (modulator electrode bboxes + the two
     # MZM->DC routes) which the DC->EC routes below reuse.
@@ -157,8 +160,9 @@ def die_r4a() -> fw.Component:
     # continuous grating grid.
     kw = _p.keepout_width.value
     y_test_top = (half_h - kw) - _TEST_BLOCK_TOP_MARGIN
-    # Directional-coupler coupling-length test: 8 single DCs in two tiers
-    # (50/50 + 5/95 tap) with GC fibre I/O, fully wired and beam-dumped.
+    # Directional-coupler coupling-length test: 12 single 50/50 DCs, one device per
+    # six-coupler array (2 alignment + 4 device) on a 4x3 grid, GC fibre I/O on all
+    # four ports, fully wired (no beam dumps).
     cell.add_placed(
         dc_length_sweep_block(), name="dc_length_sweep", x=block_x_base(0), y=y_test_top
     )
@@ -169,7 +173,7 @@ def die_r4a() -> fw.Component:
     )
     # DC bias routing on TOP_METAL (first test of the routing_top_metal spec):
     # the modulator head's tunable-coupler west terminal -> DC bond pad 0.
-    add_dc_pad_routes(cell)
+    add_dc_pad_routes(cell, second_head="test_modulator_head_2")
     # Visible names on the RF GSG launch pads (north of each triplet) and on the
     # thermistance bonding pad (west of it) -- last, so both read the pads' final
     # placed positions.

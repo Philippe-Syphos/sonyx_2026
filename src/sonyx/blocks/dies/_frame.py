@@ -249,8 +249,7 @@ def die_scaffold(
             # southern one is the array's spare (nothing is wired to its circuit
             # port), so the pair reads as one through-die axis — facet on the
             # bottom edge, facet on the top edge, circuit ports looking at each
-            # other — leaving the option of joining them later without moving
-            # either facet. rotation=180 maps local (x, y) -> (X - x, Y - y), so
+            # other. rotation=180 maps local (x, y) -> (X - x, Y - y), so
             # the anchors below mirror the extra coupler's footprint in x and put
             # this facet edge_coupler_protrusion past the **top** die edge.
             north = circuit_edge_coupler_array(1)
@@ -261,6 +260,19 @@ def die_scaffold(
                 x=extra_x + nb.xmin + nb.xmax,
                 y=(half_h + _p.edge_coupler_protrusion.value) + nb.ymin,
                 rotation=180.0,
+            )
+            # Join the pair into one through-die reference waveguide: the two
+            # circuit ports are collinear (same x, far-west axis) and face each
+            # other, so a single straight autoroute runs the full die height up
+            # the west edge. Nothing on WG_RIB stands in the corridor -- the RF
+            # electrode / launch it passes are all on the metal layers, so the
+            # rib line runs straight through the RF cell region with no obstacle.
+            cell.autoroute(
+                ports_a=[("edge_coupler_extra", "o2_r0_c0")],
+                ports_b=[("edge_coupler_north", "o2_r0_c0")],
+                spec="routing_sm_default",
+                strategy="vgraph_rect",
+                name="edge_coupler_through_die",
             )
         # Single SM loss/delay spiral (3 cm, long side E-W) just east of the
         # rightmost circuit edge coupler, sitting inside the bottom keep-out.
